@@ -17,6 +17,8 @@ pub struct HttpOptions {
     /// The longest wait for the next piece of a response (`None`: no limit). Downloads use this
     /// instead of `timeout`, so a slow but steady connection still finishes.
     pub read_timeout: Option<Duration>,
+    /// Refuse every plain-HTTP URL, redirects included.
+    pub https_only: bool,
 }
 
 impl HttpOptions {
@@ -28,6 +30,7 @@ impl HttpOptions {
             timeout: Some(timeout),
             connect_timeout: None,
             read_timeout: None,
+            https_only: false,
         }
     }
 }
@@ -43,7 +46,8 @@ pub fn client(
         .deflate(true)
         .no_proxy()
         .proxy(reqwest::Proxy::custom(move |url| proxy.proxy_for(url.as_str())))
-        .tls_backend_native();
+        .tls_backend_native()
+        .https_only(options.https_only);
     if let Some(timeout) = options.timeout {
         builder = builder.timeout(timeout);
     }
@@ -113,6 +117,14 @@ mod tests {
         let http = client(&options, Arc::new(Through(proxy.uri()))).unwrap();
         let body = http.get("http://example.invalid/anything").send().await.unwrap().text().await;
         assert_eq!(body.unwrap(), "via the proxy");
+    }
+
+    #[tokio::test]
+    async fn https_only_refuses_plain_http() {
+        let options =
+            HttpOptions { https_only: true, ..HttpOptions::new("t", Duration::from_secs(5)) };
+        let http = client(&options, Arc::new(NoProxy)).unwrap();
+        assert!(http.get("http://127.0.0.1:9/x").send().await.is_err());
     }
 
     #[tokio::test]

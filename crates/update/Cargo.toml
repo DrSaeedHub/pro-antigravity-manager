@@ -1,0 +1,27 @@
+[package]
+name = "update"
+description = "Self-update: the release feed on GitHub, the download and its checks, and replacing the running executable."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+net.workspace = true
+reqwest.workspace = true
+semver.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true
+
+[lints]
+workspace = true
