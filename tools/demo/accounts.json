@@ -1,0 +1,62 @@
+{
+  "comment": "Demonstration accounts for tools/demo. Fractions are what is left (1 = full); resets are counted from `now`. Phases override accounts for the sessions that need it.",
+  "now": "2026-11-24T14:32:00Z",
+  "limits_group": "Claude and GPT models",
+  "models": [
+    {"id": "gemini-3-pro-high", "name": "Gemini 3 Pro (High)", "recommended": true},
+    {"id": "gemini-3-pro-low", "name": "Gemini 3 Pro (Low)", "recommended": true},
+    {"id": "gemini-3-flash", "name": "Gemini 3 Flash", "recommended": true},
+    {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "shared": true},
+    {"id": "claude-sonnet-4-5-thinking", "name": "Claude Sonnet 4.5 (Thinking)", "shared": true},
+    {"id": "claude-opus-4-5-thinking", "name": "Claude Opus 4.5 (Thinking)", "shared": true},
+    {"id": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)", "shared": true}
+  ],
+  "accounts": [
+    {
+      "name": "dev", "email": "nora.dev@example.com", "plan": "Google AI Pro",
+      "five_hour": [0.64, "2h 15m"], "weekly": [0.41, "3d 4h"],
+      "gemini": {"gemini-3-pro-high": [0.92, "3h 5m"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [0.97, "1h 40m"]}
+    },
+    {
+      "name": "personal", "email": "nora@example.com", "plan": "Free",
+      "five_hour": [0.88, "4h 2m"], "weekly": [0.73, "5d 2h"],
+      "gemini": {"gemini-3-pro-high": [0.55, "6h 10m"], "gemini-3-pro-low": [0.81, "6h 10m"], "gemini-3-flash": [1.0, "5h"]}
+    },
+    {
+      "name": "research", "email": "nora.research@example.org", "plan": "Google AI Pro",
+      "five_hour": [0.12, "48m"], "weekly": [0.55, "2d 19h"],
+      "gemini": {"gemini-3-pro-high": [0.34, "1h 55m"], "gemini-3-pro-low": [0.7, "1h 55m"], "gemini-3-flash": [0.9, "1h 55m"]}
+    },
+    {
+      "name": "studio", "email": "studio@example.net", "plan": "Google AI Ultra",
+      "five_hour": [0.95, "4h 41m"], "weekly": [0.81, "6d 1h"],
+      "gemini": {"gemini-3-pro-high": [0.99, "4h 41m"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [1.0, "5h"]}
+    },
+    {
+      "name": "travel", "email": "nora.travel@example.com", "expired": true
+    },
+    {
+      "name": "work-2", "email": "nora.work@example.com", "plan": "Free",
+      "five_hour": [1.0, "5h"], "weekly": [0.97, "6d 20h"],
+      "gemini": {"gemini-3-pro-high": [0.86, "2h 30m"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [1.0, "5h"]}
+    },
+    {
+      "name": "freelance", "email": "nora.freelance@example.com", "plan": "Google AI Pro", "saved": false,
+      "five_hour": [1.0, "5h"], "weekly": [0.99, "6d 23h"],
+      "gemini": {"gemini-3-pro-high": [1.0, "5h"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [1.0, "5h"]}
+    }
+  ],
+  "phases": {
+    "normal": {},
+    "dev-empty": {
+      "dev": {"five_hour": [0.03, "1h 12m"]}
+    },
+    "all-empty": {
+      "dev": {"five_hour": [0.03, "1h 12m"]},
+      "personal": {"five_hour": [0.04, "48m"]},
+      "research": {"five_hour": [0.02, "2h 40m"]},
+      "studio": {"weekly": [0.01, "2d 6h"]},
+      "work-2": {"five_hour": [0.0, "3h 20m"]}
+    }
+  }
+}

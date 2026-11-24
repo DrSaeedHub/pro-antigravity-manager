@@ -1,0 +1,74 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "1.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# Internal modules (one crate per module; the graph is the boundary contract).
+kernel = { path = "crates/kernel" }
+vault = { path = "crates/vault" }
+antigravity = { path = "crates/antigravity" }
+desktop = { path = "crates/desktop" }
+accounts = { path = "crates/accounts" }
+quota = { path = "crates/quota" }
+
+# External crates, pinned to the versions checked on 2026-11-23.
+jiff = "1.0.2"
+regex = { version = "1.13.2", default-features = false, features = ["std", "perf", "unicode-perl"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "gzip", "deflate"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+slint = { version = "1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility", "compat-1-2", "system-tray", "unstable-winit-030"] }
+slint-build = "1.19.0"
+i-slint-backend-testing = "1.19.0"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+windows = "0.62.2"
+winresource = "0.1.34"
+
+# Test-only crates.
+png = "0.18.1"
+proptest = "1.12.0"
+tempfile = "3"
+wiremock = "0.6.5"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "warn"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+undocumented_unsafe_blocks = "deny"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+# `assert!(x.is_empty())` reads better in tests than comparing with a typed empty array.
+assert_is_empty = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2

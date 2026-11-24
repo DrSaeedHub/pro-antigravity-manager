@@ -1,0 +1,140 @@
+// The signature element: an account is a planet, its quotas are orbits around it.
+// Outer orbit = weekly (Ion), middle = 5-hour (Solar), inner = Gemini (Nebula).
+
+import { Theme } from "theme.slint";
+
+component Orbit inherits Rectangle {
+    in property <float> fraction;
+    in property <bool> present: true;
+    in property <color> tint;
+    in property <length> diameter;
+    in property <length> thickness: 5px;
+
+    // The arc sweeps to its value whenever the value changes (from 0 when quota first arrives).
+    property <float> shown: root.present ? clamp(root.fraction, 0, 1) : 0;
+    animate shown { duration: Theme.sweep; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+
+    property <float> center: root.diameter / 1px / 2;
+    property <float> radius: (root.diameter - root.thickness) / 1px / 2;
+    property <angle> end: -90deg + min(root.shown, 0.9999) * 360deg;
+    property <float> end-x: root.center + root.radius * Math.cos(root.end);
+    property <float> end-y: root.center + root.radius * Math.sin(root.end);
+
+    width: root.diameter;
+    height: root.diameter;
+
+    // The faint full orbit.
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: self.width / 2;
+        border-width: root.thickness;
+        border-color: root.present ? root.tint.with-alpha(0.13) : Theme.edge;
+    }
+
+    if root.shown > 0.003: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.diameter / 1px;
+        viewbox-height: root.diameter / 1px;
+        stroke: root.tint;
+        stroke-width: root.thickness;
+        stroke-line-cap: round;
+        fill: transparent;
+
+        MoveTo {
+            x: root.center;
+            y: root.center - root.radius;
+        }
+        ArcTo {
+            x: root.end-x;
+            y: root.end-y;
+            radius-x: root.radius;
+            radius-y: root.radius;
+            large-arc: root.shown > 0.5;
+            sweep: true;
+        }
+    }
+
+    // The satellite riding the end of the arc.
+    if root.shown > 0.003: Rectangle {
+        width: root.thickness + 5px;
+        height: self.width;
+        x: root.end-x * 1px - self.width / 2;
+        y: root.end-y * 1px - self.height / 2;
+        border-radius: self.width / 2;
+        background: Theme.starlight;
+        drop-shadow-blur: 10px;
+        drop-shadow-color: root.tint;
+    }
+}
+
+export component OrbitGauge inherits Rectangle {
+    in property <float> weekly;
+    in property <bool> has-weekly;
+    in property <float> five-hour;
+    in property <bool> has-five-hour;
+    in property <float> gemini;
+    in property <bool> has-gemini;
+    in property <string> initial;
+    in property <bool> active;
+    in property <bool> failed;
+    in property <length> size: 128px;
+
+    property <length> step: 14px;
+
+    width: root.size;
+    height: root.size;
+
+    Orbit {
+        diameter: root.size;
+        tint: Theme.ion;
+        fraction: root.weekly;
+        present: root.has-weekly;
+    }
+    Orbit {
+        x: root.step;
+        y: root.step;
+        diameter: root.size - 2 * root.step;
+        tint: Theme.solar;
+        fraction: root.five-hour;
+        present: root.has-five-hour;
+    }
+    Orbit {
+        x: 2 * root.step;
+        y: 2 * root.step;
+        diameter: root.size - 4 * root.step;
+        tint: Theme.nebula;
+        fraction: root.gemini;
+        present: root.has-gemini;
+    }
+
+    // The planet: the account's initial.
+    planet := Rectangle {
+        property <length> d: root.size - 6 * root.step - 4px;
+        x: (root.width - self.d) / 2;
+        y: (root.height - self.d) / 2;
+        width: self.d;
+        height: self.d;
+        border-radius: self.d / 2;
+        background: root.failed
+            ? @radial-gradient(circle, #3A1C2E 0%, #1E1226 100%)
+            : @radial-gradient(circle, #2E3570 0%, #171B3A 100%);
+        border-width: 1px;
+        border-color: root.active ? Theme.aurora.with-alpha(0.7) : Theme.edge-bright;
+        drop-shadow-blur: root.active ? 16px : 0;
+        drop-shadow-color: Theme.aurora.with-alpha(0.35);
+
+        Text {
+            text: root.initial;
+            color: Theme.starlight;
+            font-family: Theme.display;
+            font-size: 18px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

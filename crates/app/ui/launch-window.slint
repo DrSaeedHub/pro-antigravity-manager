@@ -1,0 +1,103 @@
+// The small window an account shortcut opens: it confirms closing Antigravity when needed,
+// switches, and reports problems. It never shows the main window.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { ActionButton, ButtonKind } from "controls.slint";
+import { Copy } from "copy.slint";
+import { Spinner, Problem } from "sheets.slint";
+
+export enum LaunchStage { working, confirm, failed }
+
+export component LaunchWindow inherits Window {
+    in property <string> account;
+    in property <LaunchStage> stage: LaunchStage.working;
+    in property <string> problem-code;
+    in property <string> problem-detail;
+    callback confirm();
+    callback cancel();
+
+    title: @tr("Switching to {}", root.account);
+    icon: @image-url("../assets/icon-256.png");
+    no-frame: true;
+    background: Theme.space;
+    default-font-family: Theme.body;
+    width: 460px;
+    height: 232px;
+
+    Rectangle {
+        border-width: 1px;
+        border-color: Theme.edge-bright;
+        background: @radial-gradient(circle, #5CE1E60f 0%, #0B0D1A00 70%);
+    }
+    WindowMoveArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    VerticalLayout {
+        padding: 26px;
+        spacing: 14px;
+
+        HorizontalLayout {
+            spacing: 14px;
+            VerticalLayout {
+                alignment: center;
+                if root.stage == LaunchStage.working: Spinner { size: 26px; }
+                if root.stage == LaunchStage.confirm: Icon { data: Icons.rocket; tint: Theme.ion; size: 26px; }
+                if root.stage == LaunchStage.failed: Icon { data: Icons.warning; tint: Theme.flare; size: 26px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text {
+                    text: root.stage == LaunchStage.failed ? @tr("Couldn't switch to {}", root.account)
+                        : root.stage == LaunchStage.confirm ? @tr("Switch to {}?", root.account)
+                        : @tr("Switching to {}…", root.account);
+                    color: Theme.starlight;
+                    font-family: Theme.display;
+                    font-size: Theme.text-lg;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                Text {
+                    text: "ANTIGRAVITY ACCOUNT SWITCHER";
+                    color: Theme.dust-dim;
+                    font-family: Theme.display;
+                    font-size: Theme.text-xs;
+                    letter-spacing: 1.6px;
+                }
+            }
+        }
+
+        if root.stage == LaunchStage.confirm: Text {
+            text: @tr("Antigravity is open and has to restart to change accounts. Save your work and let running tasks finish first.");
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+        if root.stage == LaunchStage.working: Text {
+            text: @tr("Antigravity will open signed in as {}.", root.account);
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+        if root.stage == LaunchStage.failed: Problem { text: Copy.problem(root.problem-code, root.problem-detail); }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            if root.stage != LaunchStage.working: ActionButton {
+                text: root.stage == LaunchStage.failed ? @tr("Close") : @tr("Not now");
+                clicked => { root.cancel(); }
+            }
+            if root.stage == LaunchStage.confirm: ActionButton {
+                text: @tr("Close and switch");
+                kind: ButtonKind.primary;
+                clicked => { root.confirm(); }
+            }
+        }
+    }
+}

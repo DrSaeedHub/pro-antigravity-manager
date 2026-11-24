@@ -1,0 +1,210 @@
+// Every limit and every model of one account, sliding in from the right.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { IconButton, Tag } from "controls.slint";
+import { Copy } from "copy.slint";
+import { Spinner } from "sheets.slint";
+
+export enum RowKind { five-hour, weekly, gemini, other }
+
+export struct DetailRow {
+    label: string,
+    kind: RowKind,
+    fraction: float,
+    percent: string,
+    note: string,
+    low: bool,
+}
+
+export struct DetailGroup {
+    name: string,
+    rows: [DetailRow],
+}
+
+export struct Details {
+    name: string,
+    email: string,
+    plan: string,
+    updated: string,
+    loading: bool,
+    problem-code: string,
+    problem-detail: string,
+    groups: [DetailGroup],
+    models: [DetailRow],
+}
+
+component Bar inherits VerticalLayout {
+    in property <DetailRow> item;
+    property <color> tint: root.item.kind == RowKind.five-hour ? Theme.solar
+        : root.item.kind == RowKind.weekly ? Theme.ion
+        : root.item.kind == RowKind.gemini ? Theme.nebula
+        : Theme.dust;
+
+    spacing: 7px;
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: root.item.label;
+            color: Theme.starlight;
+            font-size: Theme.text-sm;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.item.note;
+            color: Theme.dust;
+            font-family: Theme.display;
+            font-size: Theme.text-xs;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.item.percent;
+            color: root.item.low ? Theme.flare : Theme.starlight;
+            font-family: Theme.display;
+            font-size: Theme.text-sm;
+            font-weight: 600;
+            horizontal-alignment: right;
+            min-width: 40px;
+        }
+    }
+    Rectangle {
+        height: 6px;
+        border-radius: 3px;
+        background: root.tint.with-alpha(0.12);
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.item.fraction, 0, 1);
+            height: 100%;
+            border-radius: 3px;
+            background: root.tint;
+            animate width { duration: Theme.sweep; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        }
+    }
+}
+
+component SectionLabel inherits Text {
+    color: Theme.dust;
+    font-family: Theme.display;
+    font-size: Theme.text-xs;
+    font-weight: 600;
+    letter-spacing: 1.6px;
+}
+
+export component DetailsDrawer inherits Rectangle {
+    in property <Details> details;
+    in property <bool> open;
+    callback close();
+
+    property <length> panel-width: min(440px, root.width - 60px);
+
+    background: root.open ? #04050C80 : #04050C00;
+    animate background { duration: Theme.calm; }
+
+    if root.open: TouchArea {
+        clicked => { root.close(); }
+    }
+
+    panel := Rectangle {
+        width: root.panel-width;
+        height: root.height;
+        x: root.open ? root.width - self.width : root.width + 40px;
+        animate x { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        background: Theme.hull;
+        border-width: 1px;
+        border-color: Theme.edge-bright;
+        drop-shadow-blur: 40px;
+        drop-shadow-color: #00000099;
+
+        TouchArea { }
+
+        head := VerticalLayout {
+            x: 26px;
+            y: 26px;
+            width: parent.width - 52px;
+            height: self.preferred-height;
+            spacing: 18px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    spacing: 4px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.details.name;
+                        color: Theme.starlight;
+                        font-family: Theme.display;
+                        font-size: Theme.text-xl;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.details.email;
+                        color: Theme.dust;
+                        font-size: Theme.text-sm;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: start;
+                    IconButton { icon: Icons.close; label: @tr("Close details"); clicked => { root.close(); } }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+                if root.details.plan != "": Tag { text: root.details.plan; tint: Theme.nebula; }
+                if root.details.updated != "": VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: @tr("Updated {}", root.details.updated);
+                        color: Theme.dust;
+                        font-size: Theme.text-xs;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            if root.details.loading: HorizontalLayout {
+                spacing: 10px;
+                Spinner { size: 18px; }
+                Text { text: @tr("Reading quota…"); color: Theme.dust; font-size: Theme.text-sm; vertical-alignment: center; }
+            }
+
+            if root.details.problem-code != "": Text {
+                text: Copy.problem(root.details.problem-code, root.details.problem-detail);
+                color: Theme.flare;
+                font-size: Theme.text-sm;
+                wrap: word-wrap;
+            }
+
+        }
+
+        // The list scrolls below the fixed header; it never slides under it.
+        Flickable {
+            x: 26px;
+            y: head.y + head.preferred-height + 18px;
+            width: parent.width - 52px;
+            height: parent.height - self.y - 20px;
+            content-height: list.preferred-height + 8px;
+
+            list := VerticalLayout {
+                width: parent.width;
+                height: self.preferred-height;
+                spacing: 22px;
+
+                for group in root.details.groups: VerticalLayout {
+                    spacing: 12px;
+                    SectionLabel { text: group.name == "" ? @tr("LIMITS") : group.name.to-uppercase(); }
+                    for row in group.rows: Bar { item: row; }
+                }
+
+                if root.details.models.length > 0: VerticalLayout {
+                    spacing: 12px;
+                    SectionLabel { text: @tr("MODELS"); }
+                    for row in root.details.models: Bar { item: row; }
+                }
+            }
+        }
+    }
+}

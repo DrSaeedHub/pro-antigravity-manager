@@ -1,0 +1,878 @@
+// The main window: our own title bar, the header, the grid of account cards, and every sheet,
+// drawer and toast on top of it.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { ActionButton, ButtonKind, IconButton, Toggle, Stepper } from "controls.slint";
+import { AccountCard, AccountView, CardState, Gauge } from "account-card.slint";
+import { Copy, Toast, ToastKind } from "copy.slint";
+import { Sheet, Spinner, TextField, Problem } from "sheets.slint";
+import { DetailsDrawer, Details, DetailGroup, DetailRow, RowKind } from "details-drawer.slint";
+import { AboutSlint, Palette } from "std-widgets.slint";
+import { LaunchWindow, LaunchStage } from "launch-window.slint";
+import { Tray, TrayAccount, TrayFuel } from "tray.slint";
+import { NoticeWindow, NoticeKind } from "notice-window.slint";
+
+export { Theme, AccountView, CardState, Gauge, Toast, ToastKind, Details, DetailGroup, DetailRow, RowKind, LaunchWindow, LaunchStage, Tray, TrayAccount, TrayFuel, NoticeWindow, NoticeKind }
+
+export enum SheetKind { none, add, switch, remove, help, about, settings }
+export enum AddStep { name, close, sign-in }
+
+component LogoMark inherits Rectangle {
+    in property <length> size: 30px;
+    width: root.size;
+    height: root.size;
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: self.width / 2;
+        border-width: 2px * root.size / 30px;
+        border-color: Theme.ion.with-alpha(0.35);
+    }
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 30;
+        viewbox-height: 30;
+        commands: "M15 1 A14 14 0 0 1 28.3 19.3";
+        stroke: Theme.ion;
+        stroke-width: 2px * root.size / 30px;
+        stroke-line-cap: round;
+        fill: transparent;
+    }
+    Rectangle {
+        x: root.size * 25 / 30;
+        y: root.size * 17 / 30;
+        width: root.size / 5;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.starlight;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: Theme.ion;
+    }
+    Rectangle {
+        x: root.size / 3;
+        y: root.size / 3;
+        width: root.size / 3;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, #8FA0FF 0%, #3B3F8F 100%);
+    }
+}
+
+component WindowButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> danger;
+    callback clicked;
+
+    width: 46px;
+    height: 36px;
+    background: touch.pressed ? (root.danger ? Theme.flare.darker(0.2) : Theme.edge)
+        : touch.has-hover ? (root.danger ? Theme.flare : Theme.hull-raised) : transparent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    touch := TouchArea { clicked => { root.clicked(); } }
+    Icon {
+        data: root.icon;
+        size: 16px;
+        weight: 1.5px;
+        tint: touch.has-hover && root.danger ? Theme.space : Theme.dust;
+    }
+}
+
+component MenuItem inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> enabled: true;
+    callback activated;
+
+    height: 40px;
+    border-radius: 9px;
+    background: touch.has-hover && root.enabled ? Theme.hull-raised : transparent;
+    opacity: root.enabled ? 1 : 0.45;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.activated(); }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Icon { data: root.icon; size: 16px; tint: Theme.dust; }
+        }
+        Text {
+            text: root.text;
+            color: Theme.starlight;
+            font-size: Theme.text-sm;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component HelpStep inherits HorizontalLayout {
+    in property <string> number;
+    in property <string> title;
+    in property <string> body;
+    spacing: 14px;
+    Rectangle {
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: Theme.ion.with-alpha(0.12);
+        border-width: 1px;
+        border-color: Theme.ion.with-alpha(0.4);
+        Text {
+            text: root.number;
+            color: Theme.ion;
+            font-family: Theme.display;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    VerticalLayout {
+        spacing: 3px;
+        Text { text: root.title; color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
+        Text { text: root.body; color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+    }
+}
+
+component EmptyState inherits VerticalLayout {
+    callback add();
+    alignment: center;
+    spacing: 22px;
+
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 150px;
+            height: 150px;
+            for ring[i] in [0, 1, 2]: Rectangle {
+                x: i * 18px;
+                y: i * 18px;
+                width: 150px - i * 36px;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: 5px;
+                border-color: (i == 0 ? Theme.ion : i == 1 ? Theme.solar : Theme.nebula).with-alpha(0.16);
+            }
+            Rectangle {
+                x: (150px - self.width) / 2;
+                y: (150px - self.height) / 2;
+                width: 46px;
+                height: 46px;
+                border-radius: 23px;
+                background: @radial-gradient(circle, #2E3570 0%, #171B3A 100%);
+                border-width: 1px;
+                border-color: Theme.edge-bright;
+                Icon { data: Icons.plus; tint: Theme.ion; size: 20px; weight: 2.2px; }
+            }
+        }
+    }
+    Text {
+        text: @tr("No accounts yet");
+        color: Theme.starlight;
+        font-family: Theme.display;
+        font-size: Theme.text-xl;
+        font-weight: 600;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: @tr("Add the Google accounts you use in Antigravity, then switch between them in one click.");
+        color: Theme.dust;
+        font-size: Theme.text-md;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        alignment: center;
+        ActionButton {
+            text: @tr("Add your first account");
+            icon: Icons.plus;
+            kind: ButtonKind.primary;
+            clicked => { root.add(); }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    // Accounts and quota
+    in property <[AccountView]> accounts;
+    in property <bool> loaded;
+    in property <bool> refreshing;
+    in property <string> updated-at;
+    in property <int> failed-count;
+    in property <string> list-problem-code;
+    in property <string> list-problem-detail;
+
+    // Install state and version
+    in property <bool> installed;
+    in property <bool> running-installed;
+    in property <string> version;
+
+    // Sheets and the drawer
+    in-out property <SheetKind> sheet: SheetKind.none;
+    in-out property <string> target-name;
+    in property <bool> busy;
+    in property <string> sheet-problem-code;
+    in property <string> sheet-problem-detail;
+    in-out property <bool> drawer-open;
+    in property <Details> details;
+
+    // The add flow
+    in-out property <AddStep> add-step: AddStep.name;
+    in-out property <string> add-name;
+    in property <string> add-email;
+    in property <bool> add-detected;
+
+    // A short note after an action
+    in property <Toast> toast;
+
+    callback refresh();
+    callback launch(string);
+    callback confirm-switch();
+    callback show-details(string);
+    callback create-shortcut(string);
+    callback confirm-remove();
+    callback install();
+    callback add-submit(string);
+    callback add-close-and-continue();
+    callback add-save();
+    callback add-cancel();
+    callback sheet-closed();
+    callback close-window();
+    callback quit();
+
+    // Settings
+    in-out property <bool> auto-switch: true;
+    in-out property <int> empty-at: 5;
+    in-out property <int> warning-seconds: 60;
+    in-out property <bool> start-with-windows;
+    callback settings-changed();
+    callback start-with-windows-toggled(bool);
+
+    title: @tr("Antigravity Account Switcher");
+    icon: @image-url("../assets/icon-256.png");
+    no-frame: true;
+    resize-border-width: 6px;
+    background: Theme.space;
+    default-font-family: Theme.body;
+    min-width: 900px;
+    min-height: 620px;
+    preferred-width: 1180px;
+    preferred-height: 780px;
+
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
+
+    public function open-add() {
+        root.add-step = AddStep.name;
+        root.add-name = "";
+        root.sheet = SheetKind.add;
+    }
+
+    function close-sheet() {
+        root.sheet = SheetKind.none;
+        root.sheet-closed();
+    }
+
+    property <length> gutter: 32px;
+    property <length> gap: 20px;
+    property <length> card-height: 262px;
+    property <length> grid-width: self.width - 2 * self.gutter;
+    property <int> columns: max(1, floor((self.grid-width + self.gap) / (380px + self.gap)));
+    property <length> card-width: (self.grid-width - (self.columns - 1) * self.gap) / self.columns;
+    property <int> rows: ceil(self.accounts.length / self.columns);
+    property <string> status: !root.loaded ? @tr("Reading saved accounts…")
+        : root.accounts.length == 0 ? @tr("Nothing saved yet")
+        : root.refreshing ? @tr("{n} account · updating quota…" | "{n} accounts · updating quota…" % root.accounts.length)
+        : root.updated-at == "" ? @tr("{n} account" | "{n} accounts" % root.accounts.length)
+        : root.failed-count > 0 ? @tr("{n} account · quota updated {0} · {1} failed" | "{n} accounts · quota updated {0} · {1} failed" % root.accounts.length, root.updated-at, root.failed-count)
+        : @tr("{n} account · quota updated {0}" | "{n} accounts · quota updated {0}" % root.accounts.length, root.updated-at);
+
+    // Atmosphere: two faint glows, nothing else.
+    Rectangle {
+        x: -260px;
+        y: -320px;
+        width: 900px;
+        height: 900px;
+        background: @radial-gradient(circle, #5CE1E614 0%, #5CE1E600 65%);
+    }
+    Rectangle {
+        x: root.width - 560px;
+        y: root.height - 520px;
+        width: 960px;
+        height: 960px;
+        background: @radial-gradient(circle, #B79CFF12 0%, #B79CFF00 65%);
+    }
+
+    title-bar := Rectangle {
+        y: 0;
+        height: 36px;
+        WindowMoveArea {
+            width: 100%;
+            height: 100%;
+        }
+        HorizontalLayout {
+            alignment: end;
+            WindowButton { icon: Icons.minimize; label: @tr("Minimize"); clicked => { root.minimized = true; } }
+            WindowButton {
+                icon: root.maximized ? Icons.restore : Icons.maximize;
+                label: root.maximized ? @tr("Restore") : @tr("Maximize");
+                clicked => { root.maximized = !root.maximized; }
+            }
+            WindowButton { icon: Icons.close; label: @tr("Close"); danger: true; clicked => { root.close-window(); } }
+        }
+    }
+
+    header := Rectangle {
+        x: root.gutter;
+        y: 40px;
+        width: root.width - 2 * root.gutter;
+        height: 76px;
+
+        WindowMoveArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        HorizontalLayout {
+            spacing: 14px;
+
+            VerticalLayout {
+                alignment: center;
+                LogoMark { }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: "ANTIGRAVITY";
+                    color: Theme.starlight;
+                    font-family: Theme.display;
+                    font-size: 17px;
+                    font-weight: 600;
+                    letter-spacing: 5px;
+                }
+                Text {
+                    text: root.status;
+                    color: Theme.dust;
+                    font-size: Theme.text-sm;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                HorizontalLayout {
+                    spacing: 10px;
+                    ActionButton {
+                        text: root.refreshing ? @tr("Refreshing…") : @tr("Refresh");
+                        icon: Icons.refresh;
+                        enabled: !root.refreshing && root.accounts.length > 0;
+                        clicked => { root.refresh(); }
+                    }
+                    ActionButton {
+                        text: @tr("Add account");
+                        icon: Icons.plus;
+                        kind: ButtonKind.primary;
+                        clicked => { root.open-add(); }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        more := IconButton {
+                            icon: Icons.more;
+                            label: @tr("More");
+                            box: 38px;
+                            clicked => { menu.show(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.list-problem-code != "": Rectangle {
+        x: root.gutter;
+        y: header.y + header.height + 4px;
+        width: root.width - 2 * root.gutter;
+        height: 20px;
+        Problem { text: Copy.problem(root.list-problem-code, root.list-problem-detail); }
+    }
+
+    if root.loaded && root.accounts.length == 0: EmptyState {
+        x: root.gutter;
+        y: header.y + header.height;
+        width: root.width - 2 * root.gutter;
+        height: root.height - self.y - 60px;
+        add => { root.open-add(); }
+    }
+
+    Flickable {
+        x: root.gutter - 12px;
+        y: header.y + header.height + 20px;
+        width: root.grid-width + 24px;
+        height: root.height - self.y;
+        content-width: self.width;
+        content-height: root.rows * (root.card-height + root.gap) + 40px;
+
+        for account[index] in root.accounts: AccountCard {
+            x: 12px + mod(index, root.columns) * (root.card-width + root.gap);
+            y: 12px + floor(index / root.columns) * (root.card-height + root.gap);
+            width: root.card-width;
+            height: root.card-height;
+            account: account;
+            launch => { root.launch(account.name); }
+            details => { root.show-details(account.name); }
+            shortcut => { root.create-shortcut(account.name); }
+            remove => {
+                root.target-name = account.name;
+                root.sheet = SheetKind.remove;
+            }
+        }
+    }
+
+    menu := PopupWindow {
+        x: root.width - root.gutter - 260px;
+        y: header.y + 62px;
+        width: 260px;
+
+        Rectangle {
+            border-radius: 14px;
+            background: Theme.hull;
+            border-width: 1px;
+            border-color: Theme.edge-bright;
+            drop-shadow-blur: 30px;
+            drop-shadow-offset-y: 10px;
+            drop-shadow-color: #00000099;
+
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                MenuItem {
+                    text: root.running-installed ? @tr("Running the installed copy")
+                        : root.installed ? @tr("Update the installed copy")
+                        : @tr("Install on this PC");
+                    icon: Icons.install;
+                    enabled: !root.running-installed;
+                    activated => { root.install(); }
+                }
+                MenuItem {
+                    text: @tr("How it works");
+                    icon: Icons.help;
+                    activated => { root.sheet = SheetKind.help; }
+                }
+                MenuItem {
+                    text: @tr("Settings");
+                    icon: Icons.details;
+                    activated => { root.sheet = SheetKind.settings; }
+                }
+                MenuItem {
+                    text: @tr("About");
+                    icon: Icons.info;
+                    activated => { root.sheet = SheetKind.about; }
+                }
+                Rectangle { height: 1px; background: Theme.edge; }
+                MenuItem {
+                    text: @tr("Quit");
+                    icon: Icons.close;
+                    activated => { root.quit(); }
+                }
+            }
+        }
+    }
+
+    DetailsDrawer {
+        y: title-bar.height;
+        width: root.width;
+        height: root.height - title-bar.height;
+        details: root.details;
+        open: root.drawer-open;
+        close => { root.drawer-open = false; }
+    }
+
+    if root.sheet == SheetKind.add: Sheet {
+        width: root.width;
+        height: root.height;
+        title: root.add-step == AddStep.name ? @tr("Add an account")
+            : root.add-step == AddStep.close ? @tr("Close Antigravity first")
+            : root.add-detected ? @tr("Signed in") : @tr("Sign in to Antigravity");
+        subtitle: root.add-step == AddStep.name ? @tr("Give it a short name. It also names its desktop shortcut.")
+            : root.add-step == AddStep.close ? @tr("Antigravity is open. It has to close so it can sign in with the new account. Save your work and let running tasks finish first.")
+            : root.add-detected ? @tr("Antigravity is signed in. Save it as “{}”.", root.add-name)
+            : @tr("Antigravity is opening. Sign in with the account you want to add. This window notices when you're done.");
+        dismissable: !root.busy;
+        dismiss => { root.add-cancel(); }
+
+        if root.add-step == AddStep.name: VerticalLayout {
+            spacing: 8px;
+            name-field := TextField {
+                placeholder: @tr("e.g. work or personal-2");
+                label: @tr("Account name");
+                text: root.add-name;
+                invalid: root.sheet-problem-code != "";
+                init => { self.take-focus(); }
+                edited(text) => { root.add-name = text; }
+                accepted => { root.add-submit(self.text); }
+            }
+            Text {
+                text: @tr("English letters, digits and hyphens.");
+                color: Theme.dust-dim;
+                font-size: Theme.text-xs;
+            }
+        }
+
+        if root.add-step == AddStep.sign-in: HorizontalLayout {
+            spacing: 14px;
+            height: 54px;
+            Rectangle {
+                width: 54px;
+                border-radius: 14px;
+                background: root.add-detected ? Theme.aurora.with-alpha(0.12) : Theme.ion.with-alpha(0.08);
+                if root.add-detected: Icon { data: Icons.check; tint: Theme.aurora; size: 24px; weight: 2.4px; }
+                if !root.add-detected: Spinner { size: 24px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text {
+                    text: root.add-detected ? (root.add-email == "" ? @tr("Email not shown") : root.add-email) : @tr("Waiting for the sign-in…");
+                    color: Theme.starlight;
+                    font-size: Theme.text-md;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.add-name;
+                    color: Theme.dust;
+                    font-family: Theme.display;
+                    font-size: Theme.text-sm;
+                }
+            }
+        }
+
+        if root.sheet-problem-code != "": Problem { text: Copy.problem(root.sheet-problem-code, root.sheet-problem-detail); }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            if root.busy: HorizontalLayout {
+                spacing: 10px;
+                Spinner { size: 18px; y: 10px; }
+                Text {
+                    text: root.add-step == AddStep.close ? @tr("Closing Antigravity…") : @tr("Working…");
+                    color: Theme.dust;
+                    font-size: Theme.text-sm;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            ActionButton {
+                text: @tr("Cancel");
+                enabled: !root.busy;
+                clicked => { root.add-cancel(); }
+            }
+            if root.add-step == AddStep.name: ActionButton {
+                text: @tr("Continue");
+                kind: ButtonKind.primary;
+                enabled: !root.busy && root.add-name != "";
+                clicked => { root.add-submit(root.add-name); }
+            }
+            if root.add-step == AddStep.close: ActionButton {
+                text: @tr("Close Antigravity");
+                kind: ButtonKind.primary;
+                enabled: !root.busy;
+                clicked => { root.add-close-and-continue(); }
+            }
+            if root.add-step == AddStep.sign-in: ActionButton {
+                text: @tr("Save account");
+                icon: Icons.check;
+                kind: ButtonKind.primary;
+                enabled: !root.busy && root.add-detected;
+                clicked => { root.add-save(); }
+            }
+        }
+    }
+
+    if root.sheet == SheetKind.switch: Sheet {
+        width: root.width;
+        height: root.height;
+        title: @tr("Switch to {}?", root.target-name);
+        subtitle: @tr("Antigravity has to restart to change accounts. Save your work and let running tasks finish first.");
+        dismissable: !root.busy;
+        dismiss => { root.close-sheet(); }
+
+        if root.sheet-problem-code != "": Problem { text: Copy.problem(root.sheet-problem-code, root.sheet-problem-detail); }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            if root.busy: HorizontalLayout {
+                spacing: 10px;
+                Spinner { size: 18px; y: 10px; }
+                Text { text: @tr("Closing Antigravity…"); color: Theme.dust; font-size: Theme.text-sm; vertical-alignment: center; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            ActionButton { text: @tr("Not now"); enabled: !root.busy; clicked => { root.close-sheet(); } }
+            ActionButton {
+                text: @tr("Close and switch");
+                kind: ButtonKind.primary;
+                enabled: !root.busy;
+                clicked => { root.confirm-switch(); }
+            }
+        }
+    }
+
+    if root.sheet == SheetKind.remove: Sheet {
+        width: root.width;
+        height: root.height;
+        title: @tr("Remove {}?", root.target-name);
+        subtitle: @tr("Only the switcher forgets it. Its projects and conversations stay on this PC, and you can add it again later.");
+        dismissable: !root.busy;
+        dismiss => { root.close-sheet(); }
+
+        if root.sheet-problem-code != "": Problem { text: Copy.problem(root.sheet-problem-code, root.sheet-problem-detail); }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            ActionButton { text: @tr("Keep it"); enabled: !root.busy; clicked => { root.close-sheet(); } }
+            ActionButton {
+                text: @tr("Remove");
+                icon: Icons.trash;
+                kind: ButtonKind.danger;
+                enabled: !root.busy;
+                clicked => { root.confirm-remove(); }
+            }
+        }
+    }
+
+    if root.sheet == SheetKind.help: Sheet {
+        width: root.width;
+        height: root.height;
+        sheet-width: 560px;
+        title: @tr("How it works");
+        dismiss => { root.close-sheet(); }
+
+        VerticalLayout {
+            spacing: 18px;
+            HelpStep {
+                number: "1";
+                title: @tr("Add each account once");
+                body: @tr("Pick Add account, name it, then sign in to Antigravity with that Google account when it opens.");
+            }
+            HelpStep {
+                number: "2";
+                title: @tr("Switch in one click");
+                body: @tr("Use a card's Switch button or its desktop shortcut. Antigravity restarts signed in as that account.");
+            }
+            HelpStep {
+                number: "3";
+                title: @tr("Watch the fuel");
+                body: @tr("Each orbit is a limit: outer weekly, middle 5-hour, inner the lowest Gemini model. Quota refreshes every minute; open a card's details for every model.");
+            }
+            HelpStep {
+                number: "4";
+                title: @tr("Let it switch for you");
+                body: @tr("Closing the window keeps the app in the tray. When the account in use runs out of its 5-hour or weekly limit, the app moves to the account with the most left, after a short countdown if Antigravity is open. An almost-empty account counts as empty; change the limit and the countdown in Settings.");
+            }
+        }
+        Text {
+            text: @tr("Saved accounts stay on this PC. Windows protects them for your user, so a portable copy on a flash drive carries none: add them once on each PC.");
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: end;
+            ActionButton { text: @tr("Got it"); kind: ButtonKind.primary; clicked => { root.close-sheet(); } }
+        }
+    }
+
+    if root.sheet == SheetKind.settings: Sheet {
+        width: root.width;
+        height: root.height;
+        sheet-width: 560px;
+        title: @tr("Settings");
+        subtitle: @tr("Quota refreshes every minute while the app runs, also from the tray.");
+        dismiss => { root.close-sheet(); }
+
+        VerticalLayout {
+            spacing: 20px;
+
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text { text: @tr("Switch automatically when quota runs out"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; wrap: word-wrap; }
+                    Text { text: @tr("Moves to the account with the most left when the one in use reaches the limit below."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        label: @tr("Switch automatically when quota runs out");
+                        on <=> root.auto-switch;
+                        toggled => { root.settings-changed(); }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text { text: @tr("Counts as out of quota at"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
+                    Text { text: @tr("A 5-hour or weekly limit at or below this is treated as empty, so the app never moves to an account that is almost empty too."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                }
+                Stepper {
+                    label: @tr("out of quota limit");
+                    minimum: 1;
+                    maximum: 50;
+                    value <=> root.empty-at;
+                    shown: root.empty-at + "%";
+                    changed => { root.settings-changed(); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text { text: @tr("Warning before Antigravity restarts"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
+                    Text { text: @tr("When Antigravity is open, a notice counts down so you can save your work or say Not now."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                }
+                Stepper {
+                    label: @tr("warning time");
+                    minimum: 0;
+                    maximum: 600;
+                    step: 15;
+                    value <=> root.warning-seconds;
+                    shown: root.warning-seconds == 0 ? @tr("None") : @tr("{} s", root.warning-seconds);
+                    changed => { root.settings-changed(); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text { text: @tr("Start with Windows"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
+                    Text { text: @tr("Starts in the tray when you sign in to Windows."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        label: @tr("Start with Windows");
+                        on <=> root.start-with-windows;
+                        toggled(on) => { root.start-with-windows-toggled(on); }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            ActionButton { text: @tr("Done"); kind: ButtonKind.primary; clicked => { root.close-sheet(); } }
+        }
+    }
+
+    if root.sheet == SheetKind.about: Sheet {
+        width: root.width;
+        height: root.height;
+        title: @tr("Antigravity Account Switcher");
+        subtitle: @tr("Version {}", root.version);
+        dismiss => { root.close-sheet(); }
+
+        Text {
+            text: @tr("Switch between your Antigravity accounts and see the quota each one has left. Saved sign-ins stay in Windows Credential Manager on this PC; nothing is sent anywhere except Google's own quota service, with each account's own sign-in.");
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+        Text {
+            text: @tr("MIT License. An independent tool, not affiliated with Google.");
+            color: Theme.dust-dim;
+            font-size: Theme.text-xs;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: start;
+            height: 70px;
+            AboutSlint { }
+        }
+        HorizontalLayout {
+            alignment: end;
+            ActionButton { text: @tr("Close"); clicked => { root.close-sheet(); } }
+        }
+    }
+
+    // The short note after an action.
+    changed toast => {
+        toast-card.shown = root.toast.serial > 0;
+        hide.running = false;
+        hide.running = true;
+    }
+
+    toast-card := Rectangle {
+        property <bool> shown;
+        property <color> tint: root.toast.kind == ToastKind.problem ? Theme.flare
+            : root.toast.kind == ToastKind.success ? Theme.aurora : Theme.ion;
+        width: min(560px, root.width - 80px);
+        height: note.preferred-height + 28px;
+        x: (root.width - self.width) / 2;
+        y: self.shown ? root.height - self.height - 28px : root.height + 20px;
+        animate y { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        border-radius: 14px;
+        background: Theme.hull-raised;
+        border-width: 1px;
+        border-color: self.tint.with-alpha(0.45);
+        drop-shadow-blur: 30px;
+        drop-shadow-color: #000000aa;
+
+        hide := Timer {
+            interval: root.toast.kind == ToastKind.problem ? 7s : 4s;
+            running: false;
+            triggered => {
+                self.running = false;
+                toast-card.shown = false;
+            }
+        }
+        TouchArea { clicked => { toast-card.shown = false; } }
+
+        HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    data: root.toast.kind == ToastKind.problem ? Icons.warning : Icons.check;
+                    tint: toast-card.tint;
+                    size: 18px;
+                }
+            }
+            note := Text {
+                text: Copy.toast(root.toast);
+                color: Theme.starlight;
+                font-size: Theme.text-sm;
+                wrap: word-wrap;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

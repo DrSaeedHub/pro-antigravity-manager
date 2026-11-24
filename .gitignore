@@ -1,0 +1,26 @@
+# Build output
+/target/
+/dist/
+
+# Local environment (the app reads no variables; see .env.example)
+.env
+.env.*
+!.env.example
+
+# Working notes of the build process
+/.run/
+
+# Coverage and mutation-test output
+/coverage/
+lcov.info
+/mutants.out*/
+
+# Editors and OS
+*.user
+*.suo
+.vs/
+.idea/
+Thumbs.db
+
+# The README demo (tools/demo): its working-tree copy, build and state
+/.demo/

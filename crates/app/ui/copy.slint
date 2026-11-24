@@ -1,0 +1,53 @@
+// Every sentence the app shows for a problem or a finished action. Rust sends stable codes;
+// the words live here, ready for translation.
+
+export enum ToastKind { info, success, problem }
+
+export struct Toast {
+    serial: int,
+    kind: ToastKind,
+    code: string,
+    name: string,
+    detail: string,
+}
+
+export global Copy {
+    // A problem, by its stable code. `detail` carries the technical part when it helps.
+    public pure function problem(code: string, detail: string) -> string {
+        return code == "accounts.invalid_name" ? @tr("Use 1 to 40 English letters, digits or hyphens, starting with a letter or digit.")
+            : code == "accounts.already_saved" ? @tr("An account with this name is already saved. Pick another name.")
+            : code == "accounts.not_saved" ? @tr("This account is no longer saved on this PC.")
+            : code == "accounts.antigravity_open" ? @tr("Antigravity is still open. Close it, then try again.")
+            : code == "accounts.not_signed_in_yet" ? @tr("Antigravity hasn't finished signing in. Finish signing in, then save.")
+            : code == "accounts.save_not_verified" ? @tr("The account couldn't be confirmed after saving. Add it again.")
+            : code == "antigravity.not_installed" ? @tr("Antigravity isn't installed on this PC. Install it, then try again.")
+            : code == "antigravity.still_running" ? @tr("Antigravity didn't close completely. Close it from the taskbar, then try again.")
+            : code == "antigravity.start_failed" ? @tr("Windows couldn't start Antigravity: {}", detail)
+            : code == "vault.not_found" ? @tr("That sign-in is no longer in Windows Credential Manager.")
+            : code == "vault.system" || code == "vault.unreadable" ? @tr("Windows Credential Manager refused the change: {}", detail)
+            : code == "desktop.folder" || code == "desktop.shortcut" || code == "desktop.file" ? @tr("Windows refused: {}", detail)
+            : code == "quota.not_saved" ? @tr("This account is no longer saved on this PC.")
+            : code == "quota.unreadable" || code == "quota.no_refresh_token" ? @tr("The saved sign-in can't be used. Remove this account and add it again.")
+            : code == "quota.sign_in_expired" ? @tr("Sign-in expired. Remove this account and add it again.")
+            : code == "quota.oauth" ? @tr("Google refused the sign-in: {}", detail)
+            : code == "quota.client_not_found" ? @tr("Antigravity's sign-in details weren't found. Make sure Antigravity is installed.")
+            : code == "quota.network" ? @tr("Couldn't reach Google. Check your connection or proxy.")
+            : code == "quota.api" ? @tr("Google's quota service answered with an error: {}", detail)
+            : detail;
+    }
+
+    // A short note after an action.
+    public pure function toast(t: Toast) -> string {
+        return t.code == "switched" ? @tr("Switched to {}. Antigravity is starting.", t.name)
+            : t.code == "already-open" ? @tr("Antigravity is already open with {}.", t.name)
+            : t.code == "opened" ? @tr("Antigravity is starting with {}.", t.name)
+            : t.code == "shortcut-created" ? @tr("Desktop shortcut created for {}.", t.name)
+            : t.code == "removed" ? @tr("Removed {}.", t.name)
+            : t.code == "removed-shortcut-kept" ? @tr("Removed {}. Its desktop shortcut couldn't be deleted.", t.name)
+            : t.code == "saved" ? @tr("Saved {}. A desktop shortcut is ready too.", t.name)
+            : t.code == "saved-no-shortcut" ? @tr("Saved {}. The desktop shortcut couldn't be created.", t.name)
+            : t.code == "add-canceled" ? @tr("Adding was canceled. Your previous sign-in is back.")
+            : t.code == "installed" ? @tr("Installed. Open it from the desktop or the Start menu.")
+            : self.problem(t.code, t.detail);
+    }
+}

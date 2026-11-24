@@ -1,0 +1,240 @@
+// Buttons and small building blocks.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+
+// primary: filled Ion. accent: a quiet Ion outline that fills when `lit` (its card is hovered)
+// or when hovered itself. quiet: neutral. danger: filled Flare.
+export enum ButtonKind { primary, accent, quiet, danger }
+
+export component ActionButton inherits Rectangle {
+    in property <string> text;
+    // What screen readers and UI Automation say, when it differs from a shortened `text`.
+    in property <string> label;
+    in property <string> icon;
+    in property <ButtonKind> kind: ButtonKind.quiet;
+    in property <bool> enabled: true;
+    in property <bool> lit;
+    callback clicked;
+
+    property <bool> hot: touch.has-hover && root.enabled;
+    property <bool> filled: root.kind == ButtonKind.primary || root.kind == ButtonKind.danger
+        || (root.kind == ButtonKind.accent && (root.lit || self.hot));
+    property <color> fill: root.kind == ButtonKind.danger ? Theme.flare
+        : root.kind == ButtonKind.quiet ? Theme.hull-raised
+        : Theme.ion;
+    property <color> ink: root.kind == ButtonKind.quiet ? Theme.starlight
+        : self.filled ? Theme.space : Theme.ion;
+
+    height: 38px;
+    horizontal-stretch: 0;
+    border-radius: 10px;
+    background: !self.filled && root.kind == ButtonKind.accent ? Theme.ion.with-alpha(self.hot ? 0.2 : 0.08)
+        : touch.pressed ? self.fill.darker(0.15)
+        : self.hot && root.kind != ButtonKind.accent ? self.fill.brighter(0.12)
+        : self.fill;
+    border-width: root.kind == ButtonKind.quiet || (root.kind == ButtonKind.accent && !self.filled) ? 1px : 0;
+    border-color: root.kind == ButtonKind.accent ? Theme.ion.with-alpha(0.35)
+        : self.hot ? Theme.edge-bright : Theme.edge;
+    opacity: root.enabled ? 1 : 0.4;
+    drop-shadow-blur: self.filled && self.hot ? 18px : 0;
+    drop-shadow-color: self.fill.with-alpha(0.45);
+    animate background, drop-shadow-blur, border-color { duration: Theme.quick; }
+
+    accessible-role: button;
+    accessible-label: root.label != "" ? root.label : root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: root.icon == "" ? 18px : 14px;
+        padding-right: 18px;
+        spacing: 8px;
+        alignment: center;
+
+        if root.icon != "": VerticalLayout {
+            alignment: center;
+            Icon { data: root.icon; tint: root.ink; size: 16px; weight: 2px; }
+        }
+        Text {
+            text: root.text;
+            color: root.ink;
+            font-family: Theme.display;
+            font-size: 14px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;          // spoken by screen readers
+    in property <color> tint: Theme.dust;
+    in property <color> hot-tint: Theme.starlight;
+    in property <color> hot-fill: Theme.hull-raised;
+    in property <length> box: 34px;
+    callback clicked;
+
+    width: self.box;
+    height: self.box;
+    border-radius: 9px;
+    background: touch.pressed ? root.hot-fill.darker(0.2) : touch.has-hover ? root.hot-fill : transparent;
+    animate background { duration: Theme.quick; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    Icon {
+        data: root.icon;
+        tint: touch.has-hover ? root.hot-tint : root.tint;
+        size: 18px;
+        animate tint { duration: Theme.quick; }
+    }
+}
+
+// A small upper-case tag ("ACTIVE", "PRO"). Short of room it elides rather than pushing its
+// neighbours out: plan names come from Google and have no fixed length.
+export component Tag inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.dust;
+    in property <bool> pulse;
+
+    property <bool> lit;
+    init => { self.lit = true; }
+
+    height: 22px;
+    horizontal-stretch: 0;
+    border-radius: 11px;
+    background: root.tint.with-alpha(0.12);
+    border-width: 1px;
+    border-color: root.tint.with-alpha(0.35);
+
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 10px;
+        spacing: 6px;
+        alignment: center;
+
+        if root.pulse: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: root.tint;
+                opacity: root.lit ? 1 : 0.25;
+                animate opacity { duration: 1400ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.tint;
+            font-family: Theme.display;
+            font-size: Theme.text-xs;
+            font-weight: 600;
+            letter-spacing: 1.2px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// An on/off switch.
+export component Toggle inherits Rectangle {
+    in-out property <bool> on;
+    in property <string> label;
+    callback toggled(bool);
+
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.on ? Theme.ion : Theme.edge-bright;
+    animate background { duration: Theme.quick; }
+    accessible-role: checkbox;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.on = !root.on;
+        root.toggled(root.on);
+    }
+
+    Rectangle {
+        width: 20px;
+        height: 20px;
+        y: 3px;
+        x: root.on ? parent.width - self.width - 3px : 3px;
+        border-radius: 10px;
+        background: root.on ? Theme.space : Theme.starlight;
+        animate x { duration: Theme.quick; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+    }
+}
+
+// − value +
+export component Stepper inherits HorizontalLayout {
+    in-out property <int> value;
+    in property <int> minimum;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> shown;
+    in property <string> label;
+    callback changed(int);
+
+    spacing: 6px;
+    horizontal-stretch: 0;
+    VerticalLayout {
+        alignment: center;
+        IconButton {
+            icon: Icons.minimize;
+            label: @tr("Less {}", root.label);
+            clicked => {
+                root.value = max(root.minimum, root.value - root.step);
+                root.changed(root.value);
+            }
+        }
+    }
+    Text {
+        text: root.shown;
+        color: Theme.starlight;
+        font-family: Theme.display;
+        font-size: Theme.text-md;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        min-width: 78px;
+    }
+    VerticalLayout {
+        alignment: center;
+        IconButton {
+            icon: Icons.plus;
+            label: @tr("More {}", root.label);
+            clicked => {
+                root.value = min(root.maximum, root.value + root.step);
+                root.changed(root.value);
+            }
+        }
+    }
+}

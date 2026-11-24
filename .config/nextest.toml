@@ -1,0 +1,8 @@
+# Windows Credential Manager can lose a write when several processes write at the same moment,
+# so the tests that touch the real store run one at a time.
+[test-groups]
+credential-manager = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(vault) & test(/^windows::/)'
+test-group = 'credential-manager'

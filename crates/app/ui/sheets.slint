@@ -1,0 +1,174 @@
+// Modal sheets, the text field and the spinner.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+
+export component Spinner inherits Rectangle {
+    in property <length> size: 22px;
+    in property <color> tint: Theme.ion;
+    property <bool> spinning;
+    init => { self.spinning = true; }
+
+    width: root.size;
+    height: root.size;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: self.width / 2;
+        border-width: 2.4px * root.size / 24px;
+        border-color: root.tint.with-alpha(0.15);
+    }
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M12 1.2 A10.8 10.8 0 0 1 22.8 12";
+        stroke: root.tint;
+        stroke-width: 2.4px * root.size / 24px;
+        stroke-line-cap: round;
+        fill: transparent;
+        transform-rotation: root.spinning ? 360deg : 0deg;
+        animate transform-rotation { duration: 900ms; iteration-count: -1; easing: linear; }
+    }
+}
+
+export component TextField inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder;
+    in property <bool> invalid;
+    in property <string> label;
+    callback accepted();
+    callback edited(string);
+
+    public function take-focus() {
+        input.focus();
+    }
+
+    height: 46px;
+    border-radius: 11px;
+    background: Theme.space-deep;
+    border-width: 1px;
+    border-color: root.invalid ? Theme.flare : input.has-focus ? Theme.ion : Theme.edge;
+    animate border-color { duration: Theme.quick; }
+
+    input := TextInput {
+        x: 16px;
+        width: parent.width - 32px;
+        height: 100%;
+        vertical-alignment: center;
+        color: Theme.starlight;
+        font-size: Theme.text-md;
+        single-line: true;
+        selection-background-color: Theme.ion.with-alpha(0.35);
+        accessible-role: text-input;
+        accessible-label: root.label;
+        accepted => { root.accepted(); }
+        edited => { root.edited(self.text); }
+    }
+    if input.text == "": Text {
+        x: 16px;
+        height: 100%;
+        vertical-alignment: center;
+        text: root.placeholder;
+        color: Theme.dust-dim;
+        font-size: Theme.text-md;
+    }
+}
+
+// A centered card over a blurred, dimmed window. Clicking outside or pressing Escape dismisses it.
+export component Sheet inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <length> sheet-width: 500px;
+    in property <bool> dismissable: true;
+    callback dismiss();
+
+    property <bool> shown;
+    init => {
+        self.shown = true;
+        keys.focus();
+    }
+
+    background: #04050Cb8;
+    backdrop-blur: 14px;
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: 180ms; easing: ease-out; }
+
+    TouchArea {
+        clicked => {
+            if root.dismissable {
+                root.dismiss();
+            }
+        }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape && root.dismissable {
+                root.dismiss();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    panel := Rectangle {
+        width: min(root.sheet-width, root.width - 48px);
+        height: body.preferred-height;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2 + (root.shown ? 0 : 14px);
+        animate y { duration: 220ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        border-radius: 20px;
+        background: Theme.hull;
+        border-width: 1px;
+        border-color: Theme.edge-bright;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 18px;
+        drop-shadow-color: #000000aa;
+
+        TouchArea { }
+
+        body := VerticalLayout {
+            padding: 28px;
+            padding-top: 26px;
+            spacing: 18px;
+
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: root.title;
+                    color: Theme.starlight;
+                    font-family: Theme.display;
+                    font-size: Theme.text-lg;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                }
+                if root.subtitle != "": Text {
+                    text: root.subtitle;
+                    color: Theme.dust;
+                    font-size: Theme.text-sm;
+                    wrap: word-wrap;
+                }
+            }
+            @children
+        }
+    }
+}
+
+// A line of text with an icon, for problems inside sheets.
+export component Problem inherits HorizontalLayout {
+    in property <string> text;
+    spacing: 8px;
+    VerticalLayout {
+        alignment: start;
+        Icon { data: Icons.warning; tint: Theme.flare; size: 16px; }
+    }
+    Text {
+        text: root.text;
+        color: Theme.flare;
+        font-size: Theme.text-sm;
+        wrap: word-wrap;
+    }
+}

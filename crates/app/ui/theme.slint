@@ -1,0 +1,40 @@
+// Design tokens: "orbital telemetry". Every color and size in the UI comes from here.
+
+export global Theme {
+    // Surfaces
+    out property <color> space: #0B0D1A;
+    out property <color> space-deep: #070815;
+    out property <color> hull: #141830;
+    out property <color> hull-raised: #1B2040;
+    out property <color> edge: #232847;
+    out property <color> edge-bright: #343B6A;
+
+    // Text
+    out property <color> starlight: #EEF0FF;
+    out property <color> dust: #8A90B8;
+    out property <color> dust-dim: #5C618A;
+
+    // Quota and state
+    out property <color> solar: #FFB86B;   // 5-hour limit
+    out property <color> ion: #5CE1E6;     // weekly limit, primary actions, focus
+    out property <color> nebula: #B79CFF;  // Gemini models
+    out property <color> aurora: #6EF0B0;  // the active account
+    out property <color> flare: #FF5C7A;   // errors, low fuel, destructive actions
+
+    // Type
+    out property <string> display: "Bahnschrift";
+    out property <string> body: "Segoe UI Variable Text";
+    out property <length> text-xs: 11px;
+    out property <length> text-sm: 13px;
+    out property <length> text-md: 15px;
+    out property <length> text-lg: 20px;
+    out property <length> text-xl: 28px;
+
+    // Shape and motion
+    out property <length> radius-sm: 8px;
+    out property <length> radius-md: 12px;
+    out property <length> radius-lg: 18px;
+    out property <duration> quick: 160ms;
+    out property <duration> calm: 320ms;
+    out property <duration> sweep: 900ms;
+}

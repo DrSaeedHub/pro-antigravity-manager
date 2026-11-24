@@ -1,0 +1,162 @@
+{
+  "comment": "The README's shot list, run by tools/demo/demo.py. Sessions run in order, each a fresh app with its own state; within a session one step's leftovers are the next step's state. Steps are documented at the top of crates/app/examples/demo.rs.",
+  "window": {"width": 1180, "height": 700},
+  "sessions": [
+    {
+      "name": "overview",
+      "window": {"width": 1180, "height": 1000},
+      "phase": "normal",
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"wait": "quota"},
+        {"wait": 1800},
+        {"shot": "01-accounts"},
+        {"shot": "02-card-active", "around": [{"type": "AccountCard", "nth": 0}], "pad": 20},
+        {"shot": "03-card-low", "around": [{"type": "AccountCard", "nth": 2}], "pad": 20},
+        {"shot": "20-card-expired", "around": [{"type": "AccountCard", "nth": 4}], "pad": 20}
+      ]
+    },
+    {
+      "name": "accounts",
+      "phase": "normal",
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"wait": "quota"},
+        {"click": "Quota details", "nth": 0},
+        {"wait": 1600},
+        {"shot": "04-details", "around": [{"id": "DetailsDrawer::panel"}]},
+        {"click": "Close details"},
+        {"wait": 600},
+        {"click": "More"},
+        {"wait": 500},
+        {"shot": "23-more-menu", "crop": [883, 99, 270, 234]},
+        {"click": "How it works"},
+        {"wait": 700},
+        {"shot": "24-help", "around": [{"id": "Sheet::panel"}], "pad": 36},
+        {"click": "Got it"},
+        {"wait": 400},
+        {"click": "More"},
+        {"wait": 300},
+        {"click": "Settings"},
+        {"wait": 700},
+        {"shot": "19-settings", "around": [{"id": "Sheet::panel"}], "pad": 36},
+        {"click": "Done"},
+        {"wait": 400},
+        {"click": "More"},
+        {"wait": 300},
+        {"click": "About"},
+        {"wait": 700},
+        {"shot": "25-about", "around": [{"id": "Sheet::panel"}], "pad": 36},
+        {"click": "Close", "nth": 1},
+        {"wait": 400},
+        {"scroll": {"type": "AccountCard", "nth": 0}, "by": -600},
+        {"wait": 400},
+        {"click": "Remove account", "within": {"type": "AccountCard", "has": "travel"}},
+        {"wait": 700},
+        {"shot": "21-remove", "around": [{"id": "Sheet::panel"}], "pad": 36},
+        {"click": "Keep it"},
+        {"wait": 400},
+        {"scroll": {"type": "AccountCard", "nth": 0}, "by": 600},
+        {"wait": 400},
+        {"click": "Add account"},
+        {"wait": 500},
+        {"type": "freelance"},
+        {"wait": 500},
+        {"shot": "05-add-name", "around": [{"id": "Sheet::panel"}], "pad": 10},
+        {"click": "Continue"},
+        {"wait": 800},
+        {"shot": "06-add-close", "around": [{"id": "Sheet::panel"}], "pad": 10},
+        {"click": "Close Antigravity"},
+        {"wait": 1400},
+        {"shot": "07-add-waiting", "around": [{"id": "Sheet::panel"}], "pad": 10},
+        {"sign_in": {"email": "nora.freelance@example.com", "refresh": "demo-refresh-freelance"}},
+        {"wait": 2600},
+        {"shot": "08-add-signed-in", "around": [{"id": "Sheet::panel"}], "pad": 10},
+        {"click": "Save account"},
+        {"wait": 900},
+        {"shot": "09-add-saved", "around": [{"id": "AppWindow::toast-card"}], "pad": 4},
+        {"wait": "quota"},
+        {"wait": 4500},
+        {"click": "Switch to this account", "nth": 0},
+        {"wait": 700},
+        {"shot": "10-switch-confirm", "around": [{"id": "Sheet::panel"}], "pad": 36},
+        {"click": "Close and switch"},
+        {"wait": 1200},
+        {"shot": "11-switched", "around": [{"id": "AppWindow::toast-card"}], "pad": 4},
+        {"wait": 4500},
+        {"external": "tray-menu 14-tray-menu"},
+        {"wait": 300},
+        {"click": "Close", "nth": 0},
+        {"wait": 900},
+        {"shot": "15-tray-notice", "in": "notice"}
+      ]
+    },
+    {
+      "name": "first-run",
+      "accounts": false,
+      "steps": [
+        {"wait": 1500},
+        {"shot": "22-first-run", "crop": [250, 196, 680, 366]}
+      ]
+    },
+    {
+      "name": "countdown",
+      "phase": "dev-empty",
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"wait": "quota"},
+        {"wait": 3300},
+        {"shot": "16-countdown", "in": "notice"},
+        {"click": "Not now", "in": "notice"},
+        {"wait": 300}
+      ]
+    },
+    {
+      "name": "quiet-switch",
+      "phase": "dev-empty",
+      "antigravity_open": false,
+      "signed_in": "dev",
+      "steps": [
+        {"wait": "quota"},
+        {"wait": 1500},
+        {"shot": "17-quiet-switch", "in": "notice"}
+      ]
+    },
+    {
+      "name": "all-empty",
+      "phase": "all-empty",
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"wait": "quota"},
+        {"wait": 1500},
+        {"shot": "18-all-empty", "in": "notice"}
+      ]
+    },
+    {
+      "name": "shortcut",
+      "main": false,
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"launch": "personal"},
+        {"wait": 1000},
+        {"shot": "12-shortcut-confirm", "in": "launch"}
+      ]
+    },
+    {
+      "name": "shortcut-missing",
+      "main": false,
+      "antigravity_open": true,
+      "signed_in": "dev",
+      "steps": [
+        {"launch": "old-laptop"},
+        {"wait": 1000},
+        {"shot": "13-shortcut-failed", "in": "launch"}
+      ]
+    }
+  ]
+}

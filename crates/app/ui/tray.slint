@@ -1,0 +1,75 @@
+// The tray icon and its menu: every account with its fuel, the automatic switch, Start with
+// Windows, Settings and Quit.
+
+export enum TrayFuel { reading, unavailable, ready, empty }
+
+export struct TrayAccount {
+    name: string,
+    active: bool,
+    fuel: TrayFuel,
+    five-hour: string,
+    weekly: string,
+}
+
+export component Tray inherits SystemTrayIcon {
+    in property <[TrayAccount]> accounts;
+    in property <string> active-name;
+    in property <string> active-five-hour;
+    in property <string> active-weekly;
+    in-out property <bool> auto-switch;
+    in-out property <bool> start-with-windows;
+    callback open();
+    callback pick(string);
+    callback auto-switch-toggled(bool);
+    callback start-with-windows-toggled(bool);
+    callback open-settings();
+    callback quit();
+
+    icon: @image-url("../assets/tray-32.png");
+    tooltip: root.active-name == "" ? @tr("Antigravity Account Switcher")
+        : root.active-five-hour == "" ? @tr("Antigravity Account Switcher · {}", root.active-name)
+        : @tr("Antigravity Account Switcher · {} · 5h {} · weekly {}", root.active-name, root.active-five-hour, root.active-weekly);
+    clicked => { root.open(); }
+
+    Menu {
+        MenuItem {
+            title: @tr("Open Antigravity Account Switcher");
+            activated => { root.open(); }
+        }
+        MenuSeparator { }
+        for account in root.accounts: MenuItem {
+            title: (account.active ? "●  " : "     ") + (
+                account.fuel == TrayFuel.reading ? @tr("{} — reading quota…", account.name)
+                : account.fuel == TrayFuel.unavailable ? @tr("{} — quota unavailable", account.name)
+                : account.fuel == TrayFuel.empty ? @tr("{} — out of quota (5h {} · weekly {})", account.name, account.five-hour, account.weekly)
+                : @tr("{} — 5h {} · weekly {}", account.name, account.five-hour, account.weekly));
+            activated => { root.pick(account.name); }
+        }
+        if root.accounts.length == 0: MenuItem {
+            title: @tr("No saved accounts yet");
+            enabled: false;
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: @tr("Switch automatically when quota runs out");
+            checkable: true;
+            checked <=> root.auto-switch;
+            activated => { root.auto-switch-toggled(self.checked); }
+        }
+        MenuItem {
+            title: @tr("Start with Windows");
+            checkable: true;
+            checked <=> root.start-with-windows;
+            activated => { root.start-with-windows-toggled(self.checked); }
+        }
+        MenuItem {
+            title: @tr("Settings…");
+            activated => { root.open-settings(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: @tr("Quit");
+            activated => { root.quit(); }
+        }
+    }
+}

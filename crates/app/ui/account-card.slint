@@ -1,0 +1,219 @@
+// One saved account: the orbit gauge, who it is, its fuel left, and what you can do with it.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { ActionButton, ButtonKind, IconButton, Tag } from "controls.slint";
+import { OrbitGauge } from "orbit-gauge.slint";
+import { Copy } from "copy.slint";
+
+export enum CardState { loading, ready, failed }
+
+export struct Gauge {
+    present: bool,
+    fraction: float,
+    percent: string,
+    resets: string,
+    low: bool,
+}
+
+export struct AccountView {
+    name: string,
+    initial: string,
+    email: string,
+    plan: string,
+    active: bool,
+    state: CardState,
+    problem-code: string,
+    problem-detail: string,
+    five-hour: Gauge,
+    weekly: Gauge,
+    gemini: Gauge,
+}
+
+component Reading inherits HorizontalLayout {
+    in property <string> label;
+    in property <color> tint;
+    in property <Gauge> gauge;
+
+    spacing: 10px;
+    height: 22px;
+
+    VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: 7px;
+            height: 7px;
+            border-radius: 3.5px;
+            background: root.gauge.present ? root.tint : Theme.edge-bright;
+        }
+    }
+    Text {
+        text: root.label;
+        color: Theme.dust;
+        font-size: Theme.text-sm;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.gauge.present ? root.gauge.percent : "—";
+        color: !root.gauge.present ? Theme.dust-dim : root.gauge.low ? Theme.flare : Theme.starlight;
+        font-family: Theme.display;
+        font-size: Theme.text-md;
+        font-weight: 600;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        min-width: 44px;
+    }
+    Text {
+        text: root.gauge.resets;
+        color: Theme.dust;
+        font-family: Theme.display;
+        font-size: Theme.text-xs;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        width: 58px;
+    }
+}
+
+export component AccountCard inherits Rectangle {
+    in property <AccountView> account;
+    callback launch();
+    callback details();
+    callback shortcut();
+    callback remove();
+
+    property <bool> hot: hover.has-hover;
+    // Below this width the full button label, the three icon buttons and a plan tag as long as
+    // GOOGLE AI ULTRA no longer fit on one row: the button takes its short label.
+    property <bool> narrow: root.width < 520px;
+
+    border-radius: Theme.radius-lg;
+    background: root.hot ? Theme.hull-raised : Theme.hull;
+    border-width: 1px;
+    border-color: root.account.active ? Theme.aurora.with-alpha(0.55)
+        : root.hot ? Theme.edge-bright : Theme.edge;
+    drop-shadow-blur: root.account.active ? 28px : root.hot ? 22px : 0;
+    drop-shadow-offset-y: root.hot ? 8px : 0;
+    drop-shadow-color: root.account.active ? Theme.aurora.with-alpha(0.16) : #00000066;
+    animate background, border-color, drop-shadow-blur, drop-shadow-offset-y { duration: Theme.calm; easing: ease-out; }
+
+    hover := TouchArea {
+        double-clicked => { root.launch(); }
+    }
+
+    VerticalLayout {
+        padding: 20px;
+        padding-bottom: 16px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            spacing: 20px;
+
+            VerticalLayout {
+                alignment: start;
+                OrbitGauge {
+                    weekly: root.account.weekly.fraction;
+                    has-weekly: root.account.weekly.present;
+                    five-hour: root.account.five-hour.fraction;
+                    has-five-hour: root.account.five-hour.present;
+                    gemini: root.account.gemini.fraction;
+                    has-gemini: root.account.gemini.present;
+                    initial: root.account.initial;
+                    active: root.account.active;
+                    failed: root.account.state == CardState.failed;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text {
+                        text: root.account.name;
+                        color: Theme.starlight;
+                        font-family: Theme.display;
+                        font-size: Theme.text-lg;
+                        font-weight: 600;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    if root.account.active: VerticalLayout {
+                        alignment: center;
+                        Tag { text: @tr("ACTIVE"); tint: Theme.aurora; pulse: true; }
+                    }
+                }
+                Text {
+                    text: root.account.email == "" ? @tr("Email not known yet") : root.account.email;
+                    color: Theme.dust;
+                    font-size: Theme.text-sm;
+                    overflow: elide;
+                }
+                Rectangle { height: 6px; }
+
+                if root.account.state == CardState.ready: VerticalLayout {
+                    spacing: 6px;
+                    Reading { label: @tr("5-hour limit"); tint: Theme.solar; gauge: root.account.five-hour; }
+                    Reading { label: @tr("Weekly limit"); tint: Theme.ion; gauge: root.account.weekly; }
+                    Reading { label: @tr("Gemini"); tint: Theme.nebula; gauge: root.account.gemini; }
+                }
+                if root.account.state == CardState.loading: Text {
+                    text: @tr("Reading quota…");
+                    color: Theme.dust;
+                    font-size: Theme.text-sm;
+                }
+                if root.account.state == CardState.failed: HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: start;
+                        Icon { data: Icons.warning; tint: Theme.flare; size: 16px; }
+                    }
+                    Text {
+                        text: Copy.problem(root.account.problem-code, root.account.problem-detail);
+                        color: Theme.flare;
+                        font-size: Theme.text-sm;
+                        wrap: word-wrap;
+                        max-lines: 3;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.edge;
+        }
+
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: stretch;
+
+            ActionButton {
+                label: root.account.active ? @tr("Open Antigravity") : @tr("Switch to this account");
+                text: !root.narrow ? self.label : root.account.active ? @tr("Open") : @tr("Switch");
+                icon: Icons.rocket;
+                kind: root.account.active ? ButtonKind.quiet : ButtonKind.accent;
+                lit: root.hot;
+                clicked => { root.launch(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if root.account.plan != "": VerticalLayout {
+                alignment: center;
+                Tag { text: root.account.plan; tint: Theme.nebula; }
+            }
+            Rectangle { width: 6px; }
+            IconButton { icon: Icons.details; label: @tr("Quota details"); clicked => { root.details(); } }
+            IconButton { icon: Icons.shortcut; label: @tr("Create desktop shortcut"); clicked => { root.shortcut(); } }
+            IconButton {
+                icon: Icons.trash;
+                label: @tr("Remove account");
+                hot-tint: Theme.flare;
+                hot-fill: Theme.flare.with-alpha(0.12);
+                clicked => { root.remove(); }
+            }
+        }
+    }
+}

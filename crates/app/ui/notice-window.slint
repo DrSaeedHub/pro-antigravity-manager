@@ -1,0 +1,124 @@
+// A small always-on-top notice in the bottom-right corner, for things that happen while the main
+// window is hidden: the countdown before an automatic switch, every account being out of quota,
+// a quiet switch, and the first close to the tray.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { ActionButton, ButtonKind } from "controls.slint";
+
+export enum NoticeKind { countdown, all-empty, signed-in, in-tray }
+
+export component NoticeWindow inherits Window {
+    in property <NoticeKind> kind;
+    in property <string> from;
+    in property <string> to;
+    in property <string> left;
+    in property <string> refill;
+    in property <int> seconds-left;
+    in property <int> seconds-total: 60;
+    callback act();
+    callback dismiss();
+
+    title: @tr("Antigravity Account Switcher");
+    icon: @image-url("../assets/icon-256.png");
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.hull;
+    default-font-family: Theme.body;
+    width: 430px;
+    height: 196px;
+
+    property <color> tint: root.kind == NoticeKind.all-empty ? Theme.flare
+        : root.kind == NoticeKind.countdown ? Theme.solar
+        : root.kind == NoticeKind.signed-in ? Theme.aurora : Theme.ion;
+
+    Rectangle {
+        border-width: 1px;
+        border-color: root.tint.with-alpha(0.5);
+        background: @radial-gradient(circle, #5CE1E60c 0%, #14183000 70%);
+    }
+    WindowMoveArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    VerticalLayout {
+        padding: 22px;
+        padding-bottom: 18px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: start;
+                Icon {
+                    data: root.kind == NoticeKind.all-empty ? Icons.warning
+                        : root.kind == NoticeKind.countdown ? Icons.rocket
+                        : root.kind == NoticeKind.signed-in ? Icons.check : Icons.info;
+                    tint: root.tint;
+                    size: 22px;
+                }
+            }
+            Text {
+                text: root.kind == NoticeKind.countdown ? @tr("{} is out of quota", root.from)
+                    : root.kind == NoticeKind.all-empty ? @tr("Every account is out of quota")
+                    : root.kind == NoticeKind.signed-in ? @tr("Switched to {}", root.to)
+                    : @tr("Still running in the tray");
+                color: Theme.starlight;
+                font-family: Theme.display;
+                font-size: Theme.text-md + 2px;
+                font-weight: 600;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.kind == NoticeKind.countdown
+                ? @tr("Switching to {} ({} left) in {} s. Antigravity will restart, so save your work.", root.to, root.left, root.seconds-left)
+                : root.kind == NoticeKind.all-empty
+                ? (root.to == "" ? @tr("Automatic switching waits until a limit refills.")
+                    : @tr("{} refills first, at {}. Automatic switching waits until then.", root.to, root.refill))
+                : root.kind == NoticeKind.signed-in
+                ? @tr("{} ran out of quota. Antigravity will start with {} next time.", root.from, root.to)
+                : @tr("Quota keeps refreshing every minute. Right-click the tray icon to switch accounts or quit.");
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+
+        if root.kind == NoticeKind.countdown: Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.solar.with-alpha(0.15);
+            Rectangle {
+                x: 0;
+                height: 100%;
+                border-radius: 2px;
+                width: parent.width * max(0, root.seconds-left) / max(1, root.seconds-total);
+                background: Theme.solar;
+                animate width { duration: 1s; easing: linear; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            if root.kind == NoticeKind.countdown: ActionButton {
+                text: @tr("Not now");
+                clicked => { root.dismiss(); }
+            }
+            if root.kind == NoticeKind.countdown: ActionButton {
+                text: @tr("Switch now");
+                kind: ButtonKind.primary;
+                clicked => { root.act(); }
+            }
+            if root.kind != NoticeKind.countdown: ActionButton {
+                text: root.kind == NoticeKind.in-tray ? @tr("Got it") : @tr("OK");
+                clicked => { root.dismiss(); }
+            }
+        }
+    }
+}

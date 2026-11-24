@@ -1,0 +1,23 @@
+[package]
+name = "accounts"
+description = "Saved Antigravity accounts: naming, listing, switching, removing and the guided add flow."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+antigravity.workspace = true
+desktop.workspace = true
+kernel.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+vault.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
