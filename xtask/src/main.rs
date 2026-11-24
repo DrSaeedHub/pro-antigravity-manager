@@ -2,14 +2,20 @@
 //!
 //! - `cargo xtask check`: the gate. Format, lint, licenses and advisories, unused dependencies,
 //!   the environment rule, then every test with the coverage gate. Stops at the first failure.
-//! - `cargo xtask dist`: a release build packed as `dist/AntigravityAccountSwitcher-<version>.zip`
-//!   with its SHA-256.
+//! - `cargo xtask dist [--tag vX.Y.Z] [--portable-only]`: a release build and every file a GitHub
+//!   release carries, in `dist/`: the installer (Inno Setup), the portable zip, `latest.json` (the
+//!   feed running copies update from), `SHA256SUMS.txt` and `release-notes.md` (the CHANGELOG
+//!   section). With `--tag` it first checks that the tag is this version and, on GitHub Actions,
+//!   that `repository` in Cargo.toml is the repository being built.
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,
     reason = "a command-line tool reports to the console"
 )]
 
+mod release;
+
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -21,12 +27,12 @@ const COVERAGE_LINES: &str = "95";
 const COVERAGE_IGNORE: &str = r"(xtask|crates[\\/]app[\\/])";
 
 fn main() -> ExitCode {
-    let task = std::env::args().nth(1).unwrap_or_default();
-    let result = match task.as_str() {
-        "check" => check(),
-        "dist" => dist(),
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = match args.first().map(String::as_str) {
+        Some("check") => check(),
+        Some("dist") => dist(&args[1..]),
         _ => {
-            eprintln!("usage: cargo xtask <check|dist>");
+            eprintln!("usage: cargo xtask <check | dist [--tag vX.Y.Z] [--portable-only]>");
             return ExitCode::from(2);
         }
     };
@@ -122,27 +128,110 @@ fn visit(dir: &Path, on_file: &mut dyn FnMut(&Path, &str)) -> std::io::Result<()
     Ok(())
 }
 
-fn dist() -> Result<(), String> {
-    run("release build", "cargo", &["build", "--release", "--locked", "--package", "app"])?;
-    let root = root();
+/// Where Inno Setup's compiler may be.
+fn inno_compiler() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for variable in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
+        if let Some(base) = std::env::var_os(variable) {
+            let base = PathBuf::from(base);
+            let base = if variable == "LOCALAPPDATA" { base.join("Programs") } else { base };
+            for version in ["Inno Setup 7", "Inno Setup 6"] {
+                candidates.push(base.join(version).join("ISCC.exe"));
+            }
+        }
+    }
+    candidates.into_iter().find(|path| path.is_file()).or_else(|| {
+        Command::new("where")
+            .arg("iscc")
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| {
+                String::from_utf8_lossy(&output.stdout).lines().next().map(PathBuf::from)
+            })
+    })
+}
+
+fn dist(args: &[String]) -> Result<(), String> {
+    let options = release::Options::parse(args)?;
     let version = env!("CARGO_PKG_VERSION");
+    let repository = env!("CARGO_PKG_REPOSITORY");
+    let tag = release::tag_for(version, options.tag.as_deref())?;
+    if let Some(building) = std::env::var_os("GITHUB_REPOSITORY") {
+        release::check_repository(repository, &building.to_string_lossy())?;
+    }
+    let root = root();
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md"))
+        .map_err(|error| format!("CHANGELOG.md: {error}"))?;
+    let notes = release::notes(&changelog, version)
+        .ok_or_else(|| format!("CHANGELOG.md has no section `## {version}`"))?;
+
+    run("release build", "cargo", &["build", "--release", "--locked", "--package", "app"])?;
     let out = root.join("dist");
+    if out.exists() {
+        fs::remove_dir_all(&out).map_err(|error| format!("emptying dist: {error}"))?;
+    }
     fs::create_dir_all(&out).map_err(|error| format!("dist folder: {error}"))?;
-    let zip = out.join(format!("AntigravityAccountSwitcher-{version}.zip"));
-    let exe = root.join("target").join("release").join("AntigravityAccountSwitcher.exe");
+    let names = release::Names::new(version);
+
+    let exe = root.join("target").join("release").join(release::EXECUTABLE);
+    let zip = out.join(&names.portable);
     let script = format!(
-        "$ErrorActionPreference='Stop'; Compress-Archive -Force -LiteralPath '{}','{}','{}' -DestinationPath '{}'; \
-         (Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash.ToLower() + '  ' + (Split-Path -Leaf '{}') | \
-         Set-Content -Encoding ascii -LiteralPath '{}.sha256'",
+        "$ErrorActionPreference='Stop'; Compress-Archive -Force -LiteralPath '{}','{}','{}' -DestinationPath '{}'",
         exe.display(),
         root.join("LICENSE").display(),
         root.join("README.md").display(),
         zip.display(),
-        zip.display(),
-        zip.display(),
-        zip.display()
     );
-    run("package", "powershell", &["-NoProfile", "-Command", &script])?;
-    println!("\n{}", zip.display());
+    run("portable zip", "powershell", &["-NoProfile", "-Command", &script])?;
+
+    let mut files = vec![zip.clone()];
+    if options.portable_only {
+        println!("\n== installer: skipped (--portable-only)");
+    } else {
+        let compiler = inno_compiler().ok_or(
+            "Inno Setup was not found: install it (winget install JRSoftware.InnoSetup) or pass --portable-only",
+        )?;
+        let defines = [
+            format!("/DAppVersion={version}"),
+            format!("/DNumericVersion={}", release::numeric(version)),
+            format!("/DSourceDir={}", root.display()),
+            format!("/DOutputDir={}", out.display()),
+            format!("/DRepository={repository}"),
+        ];
+        let mut arguments: Vec<&str> = vec!["/Qp"];
+        arguments.extend(defines.iter().map(String::as_str));
+        let script = root.join("installer").join("AntigravityAccountSwitcher.iss");
+        let script = script.display().to_string();
+        arguments.push(&script);
+        run("installer", &compiler.to_string_lossy(), &arguments)?;
+        files.insert(0, out.join(&names.setup));
+    }
+
+    let zip_bytes = fs::read(&zip).map_err(|error| format!("{}: {error}", zip.display()))?;
+    let published = jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let manifest = release::manifest(version, &tag, repository, &published, &names, &zip_bytes);
+    write(&out.join("latest.json"), &manifest)?;
+    let mut sums = String::new();
+    for file in &files {
+        let bytes = fs::read(file).map_err(|error| format!("{}: {error}", file.display()))?;
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let _ = writeln!(sums, "{}  {name}", release::sha256(&bytes));
+    }
+    write(&out.join("SHA256SUMS.txt"), &sums)?;
+    write(
+        &out.join("release-notes.md"),
+        &release::notes_page(&notes, &names, options.portable_only),
+    )?;
+
+    println!("\nRelease files for {tag} in {}:", out.display());
+    for entry in fs::read_dir(&out).map_err(|error| error.to_string())?.flatten() {
+        let size = entry.metadata().map(|m| m.len()).unwrap_or_default();
+        println!("  {:>12}  {}", size, entry.file_name().to_string_lossy());
+    }
     Ok(())
+}
+
+fn write(path: &Path, text: &str) -> Result<(), String> {
+    fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))
 }

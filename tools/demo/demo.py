@@ -202,6 +202,7 @@ def session_file(session: dict, plan: dict, data: dict, google: PretendGoogle, o
         "now": data["now"],
         "window": session.get("window", plan.get("window", {})),
         "main": session.get("main", True),
+        "hidden": session.get("hidden", False),
         "antigravity_open": session.get("antigravity_open", False),
         "accounts": accounts,
         "steps": [] if serve else session.get("steps", []),
@@ -222,6 +223,7 @@ def scale_for(window: dict) -> float:
 
 def run_session(session: dict, plan: dict, data: dict, google: PretendGoogle, only: list[str], serve=False) -> int:
     google.phase = session.get("phase", "normal")
+    google.release = session.get("release")
     scale = scale_for(session.get("window", plan.get("window", {})))
     spec = session_file(session, plan, data, google, only, serve)
     print(f"\n== {session['name']}", flush=True)

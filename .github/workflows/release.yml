@@ -1,0 +1,72 @@
+# Pushing a tag such as v1.2.0 builds the Windows installer and the portable zip, and publishes
+# them as a GitHub release with latest.json, the feed running copies update from. A tag with a
+# hyphen (v1.3.0-beta.1) becomes a prerelease, which running copies do not take.
+#
+# The tag must match `version` in Cargo.toml, and `repository` in Cargo.toml must be this
+# repository; `cargo xtask dist --tag` stops the release otherwise.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag to build and publish again, such as v1.2.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    uses: ./.github/workflows/ci.yml
+
+  windows:
+    name: Installer and portable zip
+    needs: gate
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      CARGO_TERM_COLOR: always
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Inno Setup
+        run: |
+          $found = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 7\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ }
+          if (-not $found) { choco install innosetup --no-progress -y }
+
+      - name: Release files
+        run: cargo xtask dist --tag $env:TAG
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem dist -File | Where-Object Name -ne 'release-notes.md' | ForEach-Object { $_.FullName }
+          $title = "Antigravity Account Switcher $($env:TAG.TrimStart('v'))"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG @files --clobber
+            gh release edit $env:TAG --title $title --notes-file dist/release-notes.md
+          } elseif ($env:TAG.Contains('-')) {
+            gh release create $env:TAG @files --verify-tag --prerelease --title $title --notes-file dist/release-notes.md
+          } else {
+            gh release create $env:TAG @files --verify-tag --latest --title $title --notes-file dist/release-notes.md
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,7 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
+- Updates: the app looks for a new version on GitHub soon after it starts and then every minute,
+  with the window open or in the tray. A new version shows as an Update button at the top, an
+  item in the tray menu, a line in About and, once per version while the window is hidden, a
+  corner notice. One click downloads it with progress (Cancel stops it), checks its size, its
+  SHA-256 and that it starts and reports the right version, puts it in place and restarts on it.
+  Nothing is installed without that click. Automatic checks can be turned off in Settings; About
+  has Check for updates.
+- About and the tray menu link to the project's GitHub page.
+- Every release has an installer and a portable zip. The installer needs no administrator rights,
+  adds Start menu and desktop shortcuts (Start with Windows is a choice), and lists the app in
+  Installed apps; it closes a running copy first. Uninstalling removes the program and the
+  shortcuts the app made, and keeps settings and saved accounts.
 - Account cards no longer cut off their shortcut and remove buttons when the window is wide enough
   for three or more columns: narrow cards show "Switch" and "Open" instead of the full button
   text (screen readers still hear it in full), and a long plan name is shortened with an ellipsis.

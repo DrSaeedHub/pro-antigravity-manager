@@ -1,6 +1,8 @@
 """A pretend Google for the demo: the OAuth token endpoint and the three Cloud Code calls the
 quota service makes (loadCodeAssist, retrieveUserQuotaSummary, fetchAvailableModels), answering
-from accounts.json in the shapes the app parses (crates/quota/src/parse.rs).
+from accounts.json in the shapes the app parses (crates/quota/src/parse.rs). It also plays the
+project's GitHub releases under /gh/owner/repo: latest.json when a session sets `release`, and a
+4 MiB pretend package sent slowly, so the update sheet can be seen mid-download.
 
 Each account's refresh token is `demo-refresh-<name>` and its access token `demo-access-<name>`.
 An account marked `expired` refuses its refresh token with `invalid_grant`, as Google does for a
@@ -9,9 +11,11 @@ revoked sign-in.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
@@ -37,6 +41,8 @@ class PretendGoogle:
         self.now = datetime.strptime(data["now"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         self.phase = "normal"
         self.calls = 0
+        self.release = None
+        self.package = bytes(range(256)) * 16384
         service = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -53,6 +59,21 @@ class PretendGoogle:
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
+
+            def do_GET(self):
+                status, payload, slow = service.github(self.path)
+                self.send_response(status)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                step = 64 * 1024 if slow else max(1, len(payload))
+                try:
+                    for start in range(0, len(payload), step):
+                        self.wfile.write(payload[start : start + step])
+                        if slow:
+                            time.sleep(0.08)
+                except (ConnectionError, OSError):
+                    pass  # the app canceled the download
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
@@ -82,6 +103,32 @@ class PretendGoogle:
         if _after(self.now, reset):
             bucket["resetTime"] = _after(self.now, reset)
         return bucket
+
+    # --- the pretend GitHub ---------------------------------------------------------------
+
+    def github(self, path: str) -> tuple[int, bytes, bool]:
+        base = "/gh/owner/repo/releases"
+        if not self.release:
+            return 404, b"", False
+        version = self.release["version"]
+        package = f"AntigravityAccountSwitcher-{version}-portable.zip"
+        if path == f"{base}/latest/download/latest.json":
+            manifest = {
+                "schema": 1,
+                "version": version,
+                "published": self.data["now"],
+                "notes": f"{self.url}{base}/tag/v{version}",
+                "windows-x64": {
+                    "url": f"{self.url}{base}/download/v{version}/{package}",
+                    "sha256": hashlib.sha256(self.package).hexdigest(),
+                    "size": len(self.package),
+                    "file": "AntigravityAccountSwitcher.exe",
+                },
+            }
+            return 200, json.dumps(manifest).encode(), False
+        if path == f"{base}/download/v{version}/{package}":
+            return 200, self.package, True
+        return 404, b"", False
 
     # --- the endpoints ----------------------------------------------------------------------
 
