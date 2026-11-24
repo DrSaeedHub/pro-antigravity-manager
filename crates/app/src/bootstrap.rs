@@ -10,6 +10,7 @@ use kernel::{Clock, KnownFolders};
 use net::ProxyResolver;
 use quota::client::ClientCache;
 use quota::{QuotaService, QuotaSettings, SecretBox};
+use update::{UpdateSettings, Updater, VersionProbe};
 use vault::CredentialStore;
 
 /// Everything the UI needs.
@@ -19,6 +20,8 @@ pub struct Services {
     pub accounts: Accounts,
     /// Quota reading.
     pub quota: Arc<QuotaService>,
+    /// New versions from GitHub.
+    pub updater: Arc<Updater>,
     /// Time and the local zone.
     pub clock: Arc<dyn Clock>,
     /// Background work.
@@ -34,6 +37,9 @@ pub enum BootError {
     /// The HTTP client could not be built.
     #[error(transparent)]
     Http(#[from] quota::QuotaError),
+    /// The update client could not be built.
+    #[error(transparent)]
+    Update(#[from] update::UpdateError),
     /// The background runtime could not start.
     #[error("the background runtime could not start: {0}")]
     Runtime(#[from] std::io::Error),
@@ -60,6 +66,10 @@ pub struct Parts {
     pub current_exe: PathBuf,
     /// Quota endpoints (tests point them elsewhere).
     pub quota_settings: QuotaSettings,
+    /// Where releases come from (tests point it elsewhere).
+    pub update_settings: UpdateSettings,
+    /// Asks a downloaded executable for its version.
+    pub probe: Arc<dyn VersionProbe>,
 }
 
 /// Builds the services from `parts`.
@@ -77,7 +87,8 @@ pub fn build(parts: Parts) -> Result<Services, BootError> {
         parts.secret_box,
         &parts.quota_settings.cache_entropy,
     );
-    let http = parts.quota_settings.http_client(parts.proxy)?;
+    let http = parts.quota_settings.http_client(parts.proxy.clone())?;
+    let updater = Updater::new(parts.update_settings, parts.proxy, parts.probe)?;
     let accounts = Accounts::new(
         parts.store.clone(),
         antigravity.clone(),
@@ -100,6 +111,7 @@ pub fn build(parts: Parts) -> Result<Services, BootError> {
     Ok(Services {
         accounts,
         quota: Arc::new(quota),
+        updater: Arc::new(updater),
         clock: parts.clock,
         runtime: Arc::new(runtime),
     })
@@ -120,6 +132,8 @@ pub fn windows_parts() -> Parts {
         current_exe: std::env::current_exe()
             .unwrap_or_else(|_| PathBuf::from("AntigravityAccountSwitcher.exe")),
         quota_settings: QuotaSettings::default(),
+        update_settings: UpdateSettings::default(),
+        probe: Arc::new(update::RunProbe::default()),
     }
 }
 
@@ -140,6 +154,11 @@ pub fn preview_parts(root: &std::path::Path) -> Parts {
             api_base: "http://127.0.0.1:9/v1internal:".into(),
             ..QuotaSettings::default()
         },
+        update_settings: UpdateSettings {
+            repository: "http://127.0.0.1:9/preview/repo".into(),
+            ..UpdateSettings::default()
+        },
+        probe: Arc::new(update::FakeProbe::answering(env!("CARGO_PKG_VERSION"))),
     }
 }
 

@@ -15,7 +15,7 @@ pub const EMPTY_AT_PERCENT: RangeInclusive<u8> = 1..=50;
 pub const WARNING_SECONDS: RangeInclusive<u16> = 0..=600;
 
 /// What the person chose.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preferences {
     /// Switch to the account with the most left when the active one runs out.
     pub auto_switch: bool,
@@ -25,11 +25,22 @@ pub struct Preferences {
     pub warning_seconds: u16,
     /// Whether the "still running in the tray" note was shown already.
     pub tray_hint_shown: bool,
+    /// Look for a new version on GitHub every minute.
+    pub check_updates: bool,
+    /// The newest version the corner notice already announced (empty: none).
+    pub notified_version: String,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { auto_switch: true, empty_at_percent: 5, warning_seconds: 60, tray_hint_shown: false }
+        Self {
+            auto_switch: true,
+            empty_at_percent: 5,
+            warning_seconds: 60,
+            tray_hint_shown: false,
+            check_updates: true,
+            notified_version: String::new(),
+        }
     }
 }
 
@@ -76,6 +87,11 @@ impl Preferences {
             warning_seconds: whole("warningSeconds")
                 .map_or(defaults.warning_seconds, |n| n.min(65_535.0) as u16),
             tray_hint_shown: flag("trayHintShown", defaults.tray_hint_shown),
+            check_updates: flag("checkUpdates", defaults.check_updates),
+            notified_version: match json::get(&root, "notifiedVersion") {
+                Some(Value::String(version)) => version.trim().to_owned(),
+                _ => String::new(),
+            },
         };
         prefs.normalized()
     }
@@ -88,6 +104,8 @@ impl Preferences {
             "emptyAtPercent": self.empty_at_percent,
             "warningSeconds": self.warning_seconds,
             "trayHintShown": self.tray_hint_shown,
+            "checkUpdates": self.check_updates,
+            "notifiedVersion": self.notified_version,
         });
         serde_json::to_string_pretty(&value).unwrap_or_default()
     }
@@ -127,7 +145,7 @@ impl PreferenceStore {
                 .map_err(|error| DesktopError::file("creating the app folder", folder, &error))?;
         }
         let temporary = self.path.with_extension("json.tmp");
-        std::fs::write(&temporary, preferences.normalized().to_json())
+        std::fs::write(&temporary, preferences.clone().normalized().to_json())
             .map_err(|error| DesktopError::file("saving the settings", &temporary, &error))?;
         std::fs::rename(&temporary, &self.path)
             .map_err(|error| DesktopError::file("saving the settings", &self.path, &error))
@@ -145,6 +163,8 @@ mod tests {
         assert_eq!(prefs.empty_at_percent, 5);
         assert_eq!(prefs.warning_seconds, 60);
         assert!(!prefs.tray_hint_shown);
+        assert!(prefs.check_updates);
+        assert_eq!(prefs.notified_version, "");
         assert!((prefs.threshold() - 0.05).abs() < f64::EPSILON);
     }
 
@@ -155,8 +175,11 @@ mod tests {
             empty_at_percent: 12,
             warning_seconds: 0,
             tray_hint_shown: true,
+            check_updates: false,
+            notified_version: "1.2.0".into(),
         };
         assert_eq!(Preferences::from_json(&prefs.to_json()), prefs);
+        assert!(prefs.to_json().contains("\"checkUpdates\": false"));
         assert!(prefs.to_json().contains("\"emptyAtPercent\": 12"));
     }
 
@@ -172,6 +195,9 @@ mod tests {
         assert_eq!(Preferences::from_json(r#"{"emptyAtPercent":2.5}"#).empty_at_percent, 5);
         assert_eq!(Preferences::from_json(r#"{"warningSeconds":99999}"#).warning_seconds, 600);
         assert_eq!(Preferences::from_json(r#"{"warningSeconds":"30"}"#).warning_seconds, 30);
+        let odd = Preferences::from_json(r#"{"checkUpdates":"no","notifiedVersion":5}"#);
+        assert!(odd.check_updates);
+        assert_eq!(odd.notified_version, "");
     }
 
     #[test]

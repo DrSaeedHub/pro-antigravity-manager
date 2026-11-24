@@ -1,5 +1,6 @@
-//! The real shell: `.lnk` files through the Windows Shell Link COM object.
-#![allow(unsafe_code, reason = "COM calls")]
+//! The real shell: `.lnk` files through the Windows Shell Link COM object, web pages through
+//! `ShellExecuteW`, and the version shown in Installed apps.
+#![allow(unsafe_code, reason = "COM, Shell and registry calls")]
 
 use std::path::Path;
 
@@ -11,7 +12,7 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use windows::core::{HSTRING, Interface};
 
-use crate::shell::{DesktopError, Shell, Shortcut};
+use crate::shell::{DesktopError, Shell, Shortcut, check_web_address};
 
 /// Writes shortcuts with the Windows Shell.
 #[derive(Debug, Default, Clone, Copy)]
@@ -64,6 +65,121 @@ impl Shell for WindowsShell {
         let fail = |reason: String| DesktopError::Shortcut { path: shortcut.path.clone(), reason };
         let _com = ComScope::enter().map_err(fail)?;
         write_link(shortcut).map_err(|error| fail(error.message()))
+    }
+
+    fn open(&self, address: &str) -> Result<(), DesktopError> {
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        check_web_address(address)?;
+        let _com = ComScope::enter()
+            .map_err(|reason| DesktopError::Open { target: address.to_owned(), reason })?;
+        // SAFETY: every string argument outlives the call; ShellExecuteW returns a status code
+        // in the shape of a handle, greater than 32 on success.
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                &HSTRING::from("open"),
+                &HSTRING::from(address),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        let status = result.0 as usize;
+        if status > 32 {
+            Ok(())
+        } else {
+            Err(DesktopError::Open {
+                target: address.to_owned(),
+                reason: format!("Windows answered {status}"),
+            })
+        }
+    }
+}
+
+/// Where Windows lists installed apps for the current user.
+const UNINSTALL_KEYS: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+
+/// Sets the version Installed apps shows for the entry whose `InstallLocation` is `folder` (the
+/// installer's entry), after the app updated itself there. False when there is no such entry.
+#[must_use]
+pub fn record_installed_version(folder: &Path, version: &str) -> bool {
+    set_display_version(UNINSTALL_KEYS, folder, version)
+}
+
+fn same_folder(a: &str, b: &Path) -> bool {
+    let trim = |text: &str| text.trim_end_matches(['\\', '/']).to_lowercase();
+    trim(a) == trim(&b.to_string_lossy())
+}
+
+fn wide_value(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn set_display_version(root: &str, folder: &Path, version: &str) -> bool {
+    use windows::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_READ, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW,
+        RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
+    };
+    let mut keys = HKEY::default();
+    // SAFETY: the key handle is closed below; every buffer is local and sized for its call.
+    unsafe {
+        if RegOpenKeyExW(HKEY_CURRENT_USER, &HSTRING::from(root), None, KEY_READ, &raw mut keys)
+            .is_err()
+        {
+            return false;
+        }
+        let mut found = false;
+        let mut index = 0;
+        loop {
+            let mut name = [0u16; 256];
+            let mut length = 256u32;
+            let listed = RegEnumKeyExW(
+                keys,
+                index,
+                Some(windows::core::PWSTR(name.as_mut_ptr())),
+                &raw mut length,
+                None,
+                None,
+                None,
+                None,
+            );
+            if listed.is_err() {
+                break;
+            }
+            index += 1;
+            let subkey = HSTRING::from_wide(&name[..length as usize]);
+            let mut location = [0u16; 1024];
+            let mut size = 2048u32;
+            let read = RegGetValueW(
+                keys,
+                &subkey,
+                &HSTRING::from("InstallLocation"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(location.as_mut_ptr().cast()),
+                Some(&raw mut size),
+            );
+            if read.is_err() {
+                continue;
+            }
+            let end = location.iter().position(|&c| c == 0).unwrap_or(location.len());
+            if !same_folder(&String::from_utf16_lossy(&location[..end]), folder) {
+                continue;
+            }
+            let wide = wide_value(version);
+            let written = RegSetKeyValueW(
+                keys,
+                &subkey,
+                &HSTRING::from("DisplayVersion"),
+                REG_SZ.0,
+                Some(wide.as_ptr().cast()),
+                u32::try_from(wide.len() * 2).unwrap_or(0),
+            );
+            found |= written.is_ok();
+        }
+        let _ = RegCloseKey(keys);
+        found
     }
 }
 
@@ -172,6 +288,97 @@ mod tests {
     fn the_work_area_is_a_real_rectangle() {
         let (left, top, right, bottom) = work_area().unwrap();
         assert!(right > left && bottom > top, "{left},{top},{right},{bottom}");
+    }
+
+    #[test]
+    fn something_that_is_not_a_web_address_is_never_opened() {
+        let error = WindowsShell.open("C:/Windows/System32/calc.exe").unwrap_err();
+        assert_eq!(error.code(), "desktop.open");
+    }
+
+    /// A throw-away key under the current user, deleted when dropped.
+    struct TestKeys(String);
+
+    impl TestKeys {
+        fn new() -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos());
+            Self(format!(r"Software\AntigravityAccountSwitcherTest-{nanos}\Uninstall"))
+        }
+
+        fn entry(&self, name: &str, location: &str, version: &str) {
+            use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
+            for (value, data) in [("InstallLocation", location), ("DisplayVersion", version)] {
+                let wide = wide_value(data);
+                // SAFETY: the strings and the buffer outlive the call.
+                let result = unsafe {
+                    RegSetKeyValueW(
+                        HKEY_CURRENT_USER,
+                        &HSTRING::from(format!(r"{}\{name}", self.0)),
+                        &HSTRING::from(value),
+                        REG_SZ.0,
+                        Some(wide.as_ptr().cast()),
+                        u32::try_from(wide.len() * 2).unwrap(),
+                    )
+                };
+                assert!(result.is_ok());
+            }
+        }
+
+        fn version(&self, name: &str) -> String {
+            use windows::Win32::System::Registry::{
+                HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW,
+            };
+            let mut data = [0u16; 64];
+            let mut size = 128u32;
+            // SAFETY: the buffer is local and its size is passed.
+            let result = unsafe {
+                RegGetValueW(
+                    HKEY_CURRENT_USER,
+                    &HSTRING::from(format!(r"{}\{name}", self.0)),
+                    &HSTRING::from("DisplayVersion"),
+                    RRF_RT_REG_SZ,
+                    None,
+                    Some(data.as_mut_ptr().cast()),
+                    Some(&raw mut size),
+                )
+            };
+            assert!(result.is_ok());
+            wide_text(&data)
+        }
+    }
+
+    impl Drop for TestKeys {
+        fn drop(&mut self) {
+            use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RegDeleteTreeW};
+            let parent = self.0.trim_end_matches(r"\Uninstall");
+            // SAFETY: deletes only the throw-away key this test created.
+            unsafe {
+                let _ = RegDeleteTreeW(HKEY_CURRENT_USER, &HSTRING::from(parent));
+            }
+        }
+    }
+
+    #[test]
+    fn the_installed_apps_entry_follows_an_update() {
+        let keys = TestKeys::new();
+        keys.entry("{other}_is1", r"C:\Other\", "3.0");
+        keys.entry("{ours}_is1", r"C:\Users\x\AppData\Local\App\", "1.1.0");
+        let folder = Path::new(r"C:\Users\X\AppData\Local\App");
+        assert!(set_display_version(&keys.0, folder, "1.2.0"));
+        assert_eq!(keys.version("{ours}_is1"), "1.2.0");
+        assert_eq!(keys.version("{other}_is1"), "3.0", "other apps are left alone");
+        assert!(!set_display_version(&keys.0, Path::new(r"C:\Nowhere"), "9"));
+        assert!(!set_display_version(r"Software\AntigravityAccountSwitcherTest-none", folder, "9"));
+        // The real list is read without changing anything: no entry is ours.
+        assert!(!record_installed_version(Path::new(r"C:\Nowhere\At\All"), "9"));
+    }
+
+    #[test]
+    fn folders_compare_without_case_or_trailing_slashes() {
+        assert!(same_folder(r"C:\A\B\", Path::new(r"c:\a\b")));
+        assert!(!same_folder(r"C:\A\B", Path::new(r"C:\A\BC")));
     }
 
     #[test]

@@ -27,6 +27,14 @@ pub enum DesktopError {
         /// What Windows said.
         reason: String,
     },
+    /// Windows could not open a web address.
+    #[error("{target} could not be opened: {reason}")]
+    Open {
+        /// The address.
+        target: String,
+        /// What Windows said.
+        reason: String,
+    },
 }
 
 impl DesktopError {
@@ -37,6 +45,7 @@ impl DesktopError {
             Self::Folder(_) => "desktop.folder",
             Self::Shortcut { .. } => "desktop.shortcut",
             Self::File { .. } => "desktop.file",
+            Self::Open { .. } => "desktop.open",
         }
     }
 
@@ -66,10 +75,25 @@ pub struct Shortcut {
     pub icon_index: i32,
 }
 
-/// Writes shortcuts.
+/// Writes shortcuts and opens web pages.
 pub trait Shell: Send + Sync + Debug {
     /// Creates or replaces the shortcut file `shortcut.path`.
     fn create_shortcut(&self, shortcut: &Shortcut) -> Result<(), DesktopError>;
+
+    /// Opens `address` (only `https://` or `http://`) in the default browser.
+    fn open(&self, address: &str) -> Result<(), DesktopError>;
+}
+
+/// Only web addresses are opened: anything else could start a program.
+pub(crate) fn check_web_address(address: &str) -> Result<(), DesktopError> {
+    let lower = address.to_ascii_lowercase();
+    let web = (lower.starts_with("https://") || lower.starts_with("http://"))
+        && !address.chars().any(|c| c.is_whitespace() || c.is_control() || c == '"');
+    if web {
+        Ok(())
+    } else {
+        Err(DesktopError::Open { target: address.to_owned(), reason: "not a web address".into() })
+    }
 }
 
 #[cfg(test)]
@@ -92,5 +116,19 @@ mod tests {
         let file = DesktopError::file("copying the app", Path::new("x.exe"), &io);
         assert_eq!(file.code(), "desktop.file");
         assert_eq!(file.to_string(), "copying the app failed for x.exe: disk full");
+
+        let open = DesktopError::Open { target: "x".into(), reason: "no".into() };
+        assert_eq!(open.code(), "desktop.open");
+        assert_eq!(open.to_string(), "x could not be opened: no");
+    }
+
+    #[test]
+    fn only_web_addresses_may_be_opened() {
+        assert!(check_web_address("https://github.com/o/r").is_ok());
+        assert!(check_web_address("HTTP://127.0.0.1:8080/x").is_ok());
+        for bad in ["C:/Windows/notepad.exe", "file:///C:/x", "https://a b", "https://a\"x", "calc"]
+        {
+            assert_eq!(check_web_address(bad).unwrap_err().code(), "desktop.open", "{bad}");
+        }
     }
 }

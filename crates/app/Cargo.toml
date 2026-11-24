@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
 build = "build.rs"
 
@@ -27,6 +28,7 @@ slint.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+update.workspace = true
 vault.workspace = true
 
 [build-dependencies]
@@ -38,6 +40,7 @@ winresource.workspace = true
 [dev-dependencies]
 i-slint-backend-testing.workspace = true
 png.workspace = true
+semver.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 

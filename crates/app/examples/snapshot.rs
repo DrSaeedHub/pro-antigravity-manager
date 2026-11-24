@@ -1,8 +1,9 @@
 //! Renders a screen with demo data and saves it as a PNG, for design review.
 //!
 //! `cargo run -p app --example snapshot -- <out.png> [scene] [width] [height]`
-//! Scenes: main, empty, add, sign-in, switch, remove, details, help, about, settings, launch,
-//! launch-failed, notice, notice-empty, notice-switched, notice-tray.
+//! Scenes: main, empty, add, sign-in, switch, remove, details, help, about, about-update,
+//! about-failed, settings, update, update-failed, launch, launch-failed, notice, notice-empty,
+//! notice-switched, notice-tray, notice-update.
 #![allow(clippy::print_stderr, reason = "a developer tool reports to the console")]
 
 use std::error::Error;
@@ -14,6 +15,7 @@ use std::time::Duration;
 use app::ui::{
     AccountView, AddStep, AppWindow, CardState, DetailGroup, DetailRow, Details, Gauge,
     LaunchStage, LaunchWindow, NoticeKind, NoticeWindow, RowKind, SheetKind, Toast, ToastKind,
+    UpdateStage,
 };
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -138,6 +140,13 @@ fn main_window(scene: &str, width: f32, height: f32, out: String) -> Result<(), 
     window.set_accounts(ModelRc::from(Rc::new(VecModel::from(accounts))));
     window.set_updated_at("14:32".into());
     window.set_failed_count(1);
+    window.set_project("github.com/DrSaeedHub/pro-antigravity-manager".into());
+    window.set_update_checked_at("14:32".into());
+    window.set_update_stage(UpdateStage::UpToDate);
+    if scene.contains("update") {
+        window.set_update_version("1.3.0".into());
+        window.set_update_stage(UpdateStage::Available);
+    }
     match scene {
         "add" => {
             window.set_add_name("work-2".into());
@@ -163,7 +172,25 @@ fn main_window(scene: &str, width: f32, height: f32, out: String) -> Result<(), 
             window.set_drawer_open(true);
         }
         "help" => window.set_sheet(SheetKind::Help),
-        "about" => window.set_sheet(SheetKind::About),
+        "about" | "about-update" => window.set_sheet(SheetKind::About),
+        "about-failed" => {
+            window.set_update_stage(UpdateStage::Failed);
+            window.set_update_problem_code("update.network".into());
+            window.set_sheet(SheetKind::About);
+        }
+        "update" => {
+            window.set_update_stage(UpdateStage::Downloading);
+            window.set_update_progress(0.46);
+            window.set_update_received("4.0 MB".into());
+            window.set_update_total("8.7 MB".into());
+            window.set_sheet(SheetKind::Update);
+        }
+        "update-failed" => {
+            window.set_update_stage(UpdateStage::Failed);
+            window.set_install_failed(true);
+            window.set_update_problem_code("update.checksum".into());
+            window.set_sheet(SheetKind::Update);
+        }
         "settings" => window.set_sheet(SheetKind::Settings),
         _ => window.set_toast(Toast {
             serial: 1,
@@ -216,6 +243,10 @@ fn notice_window(scene: &str, out: String) -> Result<(), Box<dyn Error>> {
             window.set_to("personal".into());
         }
         "notice-tray" => window.set_kind(NoticeKind::InTray),
+        "notice-update" => {
+            window.set_kind(NoticeKind::Update);
+            window.set_to("1.3.0".into());
+        }
         _ => {
             window.set_kind(NoticeKind::Countdown);
             window.set_from("work".into());

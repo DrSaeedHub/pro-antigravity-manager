@@ -1,5 +1,8 @@
-//! `--launch <name>`: what an account shortcut runs. A small window confirms closing Antigravity
-//! when it is open, switches, and reports problems; the main window never opens.
+//! The command line. `--launch <name>` is what an account shortcut runs: a small window confirms
+//! closing Antigravity when it is open, switches, and reports problems; the main window never
+//! opens. `--version` prints the version (the updater asks a downloaded copy this), `--updated
+//! <old version>` is how the previous version starts the new one, and `--uninstall` is run by the
+//! uninstaller to remove the shortcuts the app made.
 
 use std::time::Duration;
 
@@ -16,10 +19,70 @@ pub const LAUNCH: &str = "--launch";
 /// The switch that starts the app in the tray (used when starting with Windows).
 pub const TRAY: &str = "--tray";
 
+/// The switch that prints the version and exits.
+pub const VERSION: &str = update::probe::VERSION_SWITCH;
+
+/// The switch the previous version passes, with its version, when it starts the new one.
+pub const UPDATED: &str = "--updated";
+
+/// The switch the uninstaller passes.
+pub const UNINSTALL: &str = "--uninstall";
+
+fn only(args: &[String], switch: &str) -> bool {
+    matches!(args, [flag] if flag.eq_ignore_ascii_case(switch))
+}
+
+/// Whether the arguments are exactly `--version`.
+#[must_use]
+pub fn version_request(args: &[String]) -> bool {
+    only(args, VERSION)
+}
+
+/// Whether the arguments are exactly `--uninstall`.
+#[must_use]
+pub fn uninstall_request(args: &[String]) -> bool {
+    only(args, UNINSTALL)
+}
+
+/// The version this copy was updated from, when the arguments are exactly `--updated <version>`.
+#[must_use]
+pub fn updated_from(args: &[String]) -> Option<&str> {
+    match args {
+        [flag, from] if flag.eq_ignore_ascii_case(UPDATED) => Some(from.as_str()),
+        _ => None,
+    }
+}
+
+/// Removes what the app put outside its folder: every saved account's desktop shortcut and the
+/// Start-with-Windows shortcut. Saved accounts and settings stay. Returns the shortcuts that could
+/// not be removed.
+#[must_use]
+pub fn uninstall(services: &Services) -> usize {
+    let desktop = services.accounts.desktop();
+    let mut failed = 0;
+    match services.accounts.list() {
+        Ok(saved) => {
+            for account in saved {
+                if let Err(error) = desktop.delete_account_shortcut(&account.name) {
+                    tracing::warn!(code = error.code(), %error, "shortcut left");
+                    failed += 1;
+                }
+            }
+        }
+        Err(error) => tracing::warn!(code = error.code(), %error, "saved accounts unreadable"),
+    }
+    if let Err(error) = desktop.set_start_with_windows(false) {
+        tracing::warn!(code = error.code(), %error, "Start with Windows left on");
+        failed += 1;
+    }
+    tracing::info!(failed, "uninstall clean-up done");
+    failed
+}
+
 /// Whether the arguments are exactly `--tray` (any letter case).
 #[must_use]
 pub fn tray_start(args: &[String]) -> bool {
-    matches!(args, [flag] if flag.eq_ignore_ascii_case(TRAY))
+    only(args, TRAY)
 }
 
 /// The account to switch to when the arguments are exactly `--launch <name>`
@@ -130,6 +193,30 @@ mod tests {
         assert!(!tray_start(&args(&[])));
         assert!(!tray_start(&args(&["--tray", "x"])));
         assert!(!tray_start(&args(&["--launch", "x"])));
+    }
+
+    #[test]
+    fn the_update_and_uninstall_switches_are_exact() {
+        assert!(version_request(&args(&["--version"])));
+        assert!(version_request(&args(&["--VERSION"])));
+        assert!(!version_request(&args(&["--version", "x"])));
+        assert!(uninstall_request(&args(&["--uninstall"])));
+        assert!(!uninstall_request(&args(&[])));
+        assert_eq!(updated_from(&args(&["--updated", "1.1.0"])), Some("1.1.0"));
+        assert_eq!(updated_from(&args(&["--updated"])), None);
+        assert_eq!(updated_from(&args(&["--tray", "1.1.0"])), None);
+    }
+
+    #[test]
+    fn uninstalling_removes_the_shortcuts_the_app_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let services =
+            crate::bootstrap::build(crate::bootstrap::preview_parts(dir.path())).unwrap();
+        let desktop = services.accounts.desktop();
+        desktop.set_start_with_windows(true).unwrap();
+        assert!(desktop.starts_with_windows());
+        assert_eq!(uninstall(&services), 0);
+        assert!(!desktop.starts_with_windows());
     }
 
     #[test]

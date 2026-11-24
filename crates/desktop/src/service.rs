@@ -68,6 +68,17 @@ impl Desktop {
         Self { shell, folders, antigravity, current_exe, settings }
     }
 
+    /// The executable that is running now.
+    #[must_use]
+    pub fn current_exe(&self) -> &Path {
+        &self.current_exe
+    }
+
+    /// Opens a web page in the default browser.
+    pub fn open(&self, address: &str) -> Result<(), DesktopError> {
+        self.shell.open(address)
+    }
+
     fn folder(&self, folder: Folder) -> Result<PathBuf, DesktopError> {
         self.folders.path(folder).map_err(|error| DesktopError::Folder(error.folder))
     }
@@ -269,6 +280,18 @@ mod tests {
         assert_eq!(s.desktop.installed_exe().unwrap(), data.join("AntigravityAccountSwitcher.exe"));
         assert!(!s.desktop.is_installed());
         assert!(!s.desktop.is_running_installed());
+        assert_eq!(
+            s.desktop.current_exe(),
+            s.root.path().join("usb\\AntigravityAccountSwitcher.exe")
+        );
+    }
+
+    #[test]
+    fn web_pages_open_through_the_shell() {
+        let s = setup();
+        s.desktop.open("https://github.com/o/r").unwrap();
+        assert_eq!(s.shell.opened(), ["https://github.com/o/r"]);
+        assert_eq!(s.desktop.open("notepad.exe").unwrap_err().code(), "desktop.open");
     }
 
     #[test]

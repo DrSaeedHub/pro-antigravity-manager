@@ -1,12 +1,12 @@
 // A small always-on-top notice in the bottom-right corner, for things that happen while the main
 // window is hidden: the countdown before an automatic switch, every account being out of quota,
-// a quiet switch, and the first close to the tray.
+// a quiet switch, the first close to the tray, and a new version.
 
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
 import { ActionButton, ButtonKind } from "controls.slint";
 
-export enum NoticeKind { countdown, all-empty, signed-in, in-tray }
+export enum NoticeKind { countdown, all-empty, signed-in, in-tray, update }
 
 export component NoticeWindow inherits Window {
     in property <NoticeKind> kind;
@@ -54,7 +54,8 @@ export component NoticeWindow inherits Window {
                 Icon {
                     data: root.kind == NoticeKind.all-empty ? Icons.warning
                         : root.kind == NoticeKind.countdown ? Icons.rocket
-                        : root.kind == NoticeKind.signed-in ? Icons.check : Icons.info;
+                        : root.kind == NoticeKind.signed-in ? Icons.check
+                    : root.kind == NoticeKind.update ? Icons.install : Icons.info;
                     tint: root.tint;
                     size: 22px;
                 }
@@ -63,6 +64,7 @@ export component NoticeWindow inherits Window {
                 text: root.kind == NoticeKind.countdown ? @tr("{} is out of quota", root.from)
                     : root.kind == NoticeKind.all-empty ? @tr("Every account is out of quota")
                     : root.kind == NoticeKind.signed-in ? @tr("Switched to {}", root.to)
+                    : root.kind == NoticeKind.update ? @tr("Version {} is ready", root.to)
                     : @tr("Still running in the tray");
                 color: Theme.starlight;
                 font-family: Theme.display;
@@ -81,6 +83,8 @@ export component NoticeWindow inherits Window {
                     : @tr("{} refills first, at {}. Automatic switching waits until then.", root.to, root.refill))
                 : root.kind == NoticeKind.signed-in
                 ? @tr("{} ran out of quota. Antigravity will start with {} next time.", root.from, root.to)
+                : root.kind == NoticeKind.update
+                ? @tr("Update and the app restarts on the new version in a few seconds. Antigravity keeps running.")
                 : @tr("Quota keeps refreshing every minute. Right-click the tray icon to switch accounts or quit.");
             color: Theme.dust;
             font-size: Theme.text-sm;
@@ -115,7 +119,16 @@ export component NoticeWindow inherits Window {
                 kind: ButtonKind.primary;
                 clicked => { root.act(); }
             }
-            if root.kind != NoticeKind.countdown: ActionButton {
+            if root.kind == NoticeKind.update: ActionButton {
+                text: @tr("Later");
+                clicked => { root.dismiss(); }
+            }
+            if root.kind == NoticeKind.update: ActionButton {
+                text: @tr("Update");
+                kind: ButtonKind.primary;
+                clicked => { root.act(); }
+            }
+            if root.kind != NoticeKind.countdown && root.kind != NoticeKind.update: ActionButton {
                 text: root.kind == NoticeKind.in-tray ? @tr("Got it") : @tr("OK");
                 clicked => { root.dismiss(); }
             }

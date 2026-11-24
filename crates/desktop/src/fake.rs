@@ -2,11 +2,12 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use crate::shell::{DesktopError, Shell, Shortcut};
+use crate::shell::{DesktopError, Shell, Shortcut, check_web_address};
 
 #[derive(Debug, Default)]
 struct State {
     created: Vec<Shortcut>,
+    opened: Vec<String>,
     fail: bool,
 }
 
@@ -37,6 +38,12 @@ impl FakeShell {
     pub fn created(&self) -> Vec<Shortcut> {
         self.state().created.clone()
     }
+
+    /// The web addresses opened so far.
+    #[must_use]
+    pub fn opened(&self) -> Vec<String> {
+        self.state().opened.clone()
+    }
 }
 
 impl Shell for FakeShell {
@@ -53,5 +60,34 @@ impl Shell for FakeShell {
             .map_err(|error| fail(error.to_string()))?;
         state.created.push(shortcut.clone());
         Ok(())
+    }
+
+    fn open(&self, address: &str) -> Result<(), DesktopError> {
+        check_web_address(address)?;
+        let mut state = self.state();
+        if state.fail {
+            return Err(DesktopError::Open {
+                target: address.to_owned(),
+                reason: "refused by the test".into(),
+            });
+        }
+        state.opened.push(address.to_owned());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_fake_records_opened_addresses_and_can_fail() {
+        let shell = FakeShell::new();
+        shell.open("https://github.com/o/r").unwrap();
+        assert_eq!(shell.opened(), ["https://github.com/o/r"]);
+        assert_eq!(shell.open("calc.exe").unwrap_err().code(), "desktop.open");
+        shell.fail();
+        assert_eq!(shell.open("https://x.example").unwrap_err().code(), "desktop.open");
+        assert_eq!(shell.opened().len(), 1);
     }
 }

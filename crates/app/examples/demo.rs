@@ -1,8 +1,8 @@
 //! The demonstration the README's screenshots come from: the real controller, windows and tray
 //! icon, driven through their accessible buttons, with pretend Windows parts (credentials in
 //! memory, a pretend Antigravity, shortcuts that are only recorded, every folder under a scratch
-//! root) and the pretend Google quota service that `tools/demo/demo.py` runs. Nothing real on
-//! this PC is read or changed.
+//! root) and the pretend Google quota service and GitHub release feed that `tools/demo/demo.py`
+//! runs. Nothing real on this PC is read or changed.
 //!
 //! `cargo run -p app --example demo -- <session.json>`
 //!
@@ -22,7 +22,8 @@
 //! - `shot`: a file name, with `in` and either `crop` (`[x, y, width, height]`, logical pixels)
 //!   or `around` (a list of `{id | type | label, nth}` elements, plus `pad`).
 //!
-//! With `"serve": true` the app keeps running after the last step.
+//! With `"serve": true` the app keeps running after the last step; with `"hidden": true` the main
+//! window starts hidden, as it does when the app starts in the tray.
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,
@@ -102,6 +103,7 @@ struct Session {
     now: jiff::Timestamp,
     serve: bool,
     main: bool,
+    hidden: bool,
     size: (f32, f32),
     only: Vec<String>,
 }
@@ -116,6 +118,7 @@ impl Session {
             now: text(spec, "now").parse()?,
             serve: flag(spec, "serve"),
             main: spec.get("main").and_then(Value::as_bool).unwrap_or(true),
+            hidden: flag(spec, "hidden"),
             size: (
                 number(&size, "width").unwrap_or(1260.0),
                 number(&size, "height").unwrap_or(720.0),
@@ -143,6 +146,12 @@ impl Session {
                 api_base: format!("{}/v1internal:", self.api),
                 ..quota::QuotaSettings::default()
             },
+            // The pretend GitHub of demo.py; an update never gets past Cancel in the shot list.
+            update_settings: update::UpdateSettings {
+                repository: format!("{}/gh/owner/repo", self.api),
+                ..update::UpdateSettings::default()
+            },
+            probe: Arc::new(update::FakeProbe::failing("the demo installs nothing")),
         }
     }
 }
@@ -446,7 +455,9 @@ fn main() -> Result<(), Failure> {
         window.window().set_size(slint::LogicalSize::new(session.size.0, session.size.1));
         window.window().set_position(slint::PhysicalPosition::new(0, 0));
         let controller = Controller::new(&window, services.clone());
-        controller.show();
+        if !session.hidden {
+            controller.show();
+        }
         (Some(window), Some(controller))
     } else {
         (None, None)

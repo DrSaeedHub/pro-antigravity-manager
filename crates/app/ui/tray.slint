@@ -1,5 +1,5 @@
-// The tray icon and its menu: every account with its fuel, the automatic switch, Start with
-// Windows, Settings and Quit.
+// The tray icon and its menu: a new version when there is one, every account with its fuel, the
+// automatic switch, Start with Windows, Settings, the GitHub page and Quit.
 
 export enum TrayFuel { reading, unavailable, ready, empty }
 
@@ -18,7 +18,10 @@ export component Tray inherits SystemTrayIcon {
     in property <string> active-weekly;
     in-out property <bool> auto-switch;
     in-out property <bool> start-with-windows;
+    in property <string> update-version;
     callback open();
+    callback update();
+    callback open-project();
     callback pick(string);
     callback auto-switch-toggled(bool);
     callback start-with-windows-toggled(bool);
@@ -35,6 +38,10 @@ export component Tray inherits SystemTrayIcon {
         MenuItem {
             title: @tr("Open Antigravity Account Switcher");
             activated => { root.open(); }
+        }
+        if root.update-version != "": MenuItem {
+            title: @tr("Update to {}", root.update-version);
+            activated => { root.update(); }
         }
         MenuSeparator { }
         for account in root.accounts: MenuItem {
@@ -65,6 +72,10 @@ export component Tray inherits SystemTrayIcon {
         MenuItem {
             title: @tr("Settings…");
             activated => { root.open-settings(); }
+        }
+        MenuItem {
+            title: @tr("GitHub page");
+            activated => { root.open-project(); }
         }
         MenuSeparator { }
         MenuItem {

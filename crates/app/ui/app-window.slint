@@ -15,7 +15,11 @@ import { NoticeWindow, NoticeKind } from "notice-window.slint";
 
 export { Theme, AccountView, CardState, Gauge, Toast, ToastKind, Details, DetailGroup, DetailRow, RowKind, LaunchWindow, LaunchStage, Tray, TrayAccount, TrayFuel, NoticeWindow, NoticeKind }
 
-export enum SheetKind { none, add, switch, remove, help, about, settings }
+export enum SheetKind { none, add, switch, remove, help, about, settings, update }
+
+// Where updates stand: nothing known yet, a manual check running, up to date, a newer version
+// found, downloading it, putting it in place, or a problem.
+export enum UpdateStage { idle, checking, up-to-date, available, downloading, installing, failed }
 export enum AddStep { name, close, sign-in }
 
 component LogoMark inherits Rectangle {
@@ -206,6 +210,136 @@ component EmptyState inherits VerticalLayout {
     }
 }
 
+// A link: underlined on hover, a pointer, read as a link.
+component Link inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    callback clicked;
+
+    height: line.preferred-height + 4px;
+    width: line.preferred-width + 22px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            Icon { data: Icons.shortcut; tint: Theme.ion; size: 14px; }
+        }
+        line := Text {
+            text: root.text;
+            color: touch.has-hover ? Theme.starlight : Theme.ion;
+            font-size: Theme.text-sm;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        x: 20px;
+        y: parent.height - 2px;
+        width: line.preferred-width;
+        height: 1px;
+        background: Theme.ion.with-alpha(touch.has-hover ? 0.8 : 0);
+    }
+}
+
+// The update line in About: where updates stand, with the action that fits.
+component UpdatePanel inherits Rectangle {
+    in property <UpdateStage> stage;
+    in property <string> version;
+    in property <string> checked-at;
+    in property <string> received;
+    in property <string> total;
+    in property <string> problem;
+    in property <bool> install-failed;
+    callback check();
+    callback update();
+    callback notes();
+
+    property <bool> working: root.stage == UpdateStage.downloading || root.stage == UpdateStage.installing;
+    property <color> tint: root.stage == UpdateStage.failed ? Theme.flare
+        : root.stage == UpdateStage.available || self.working ? Theme.ion
+        : root.stage == UpdateStage.up-to-date ? Theme.aurora : Theme.dust;
+
+    border-radius: 14px;
+    background: Theme.space-deep;
+    border-width: 1px;
+    border-color: self.tint.with-alpha(0.35);
+    height: row.preferred-height;
+
+    row := HorizontalLayout {
+        padding: 14px;
+        padding-left: 16px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            if root.stage == UpdateStage.checking || root.working: Spinner { size: 18px; tint: Theme.ion; }
+            if root.stage != UpdateStage.checking && !root.working: Icon {
+                data: root.stage == UpdateStage.failed ? Icons.warning
+                    : root.stage == UpdateStage.available ? Icons.install
+                    : root.stage == UpdateStage.up-to-date ? Icons.check : Icons.refresh;
+                tint: root.tint;
+                size: 18px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.stage == UpdateStage.checking ? @tr("Checking for updates…")
+                    : root.stage == UpdateStage.up-to-date ? @tr("You're up to date")
+                    : root.stage == UpdateStage.available ? @tr("Version {} is ready", root.version)
+                    : root.working ? @tr("Updating to {}", root.version)
+                    : root.stage == UpdateStage.failed ? (root.install-failed ? @tr("The update didn't finish") : @tr("Couldn't check for updates"))
+                    : @tr("Updates");
+                color: Theme.starlight;
+                font-size: Theme.text-md;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.stage == UpdateStage.failed ? root.problem
+                    : root.working ? @tr("{} of {}", root.received, root.total)
+                    : root.checked-at != "" ? @tr("Checked at {}", root.checked-at)
+                    : @tr("Not checked yet");
+                color: root.stage == UpdateStage.failed ? Theme.flare : Theme.dust;
+                font-size: Theme.text-sm;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                if root.stage == UpdateStage.available: ActionButton {
+                    text: @tr("Release notes");
+                    clicked => { root.notes(); }
+                }
+                if root.stage == UpdateStage.available || (root.stage == UpdateStage.failed && root.install-failed): ActionButton {
+                    text: root.stage == UpdateStage.available ? @tr("Update") : @tr("Try again");
+                    kind: ButtonKind.primary;
+                    clicked => { root.update(); }
+                }
+                if root.working: ActionButton {
+                    text: @tr("Show");
+                    clicked => { root.update(); }
+                }
+                if root.stage == UpdateStage.idle || root.stage == UpdateStage.up-to-date || (root.stage == UpdateStage.failed && !root.install-failed): ActionButton {
+                    text: @tr("Check for updates");
+                    clicked => { root.check(); }
+                }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     // Accounts and quota
     in property <[AccountView]> accounts;
@@ -239,6 +373,22 @@ export component AppWindow inherits Window {
     // A short note after an action
     in property <Toast> toast;
 
+    // Updates and the project's page
+    in property <string> project;
+    in property <string> update-version;
+    in property <UpdateStage> update-stage: UpdateStage.idle;
+    in property <float> update-progress;
+    in property <string> update-received;
+    in property <string> update-total;
+    in property <string> update-checked-at;
+    in property <string> update-problem-code;
+    in property <string> update-problem-detail;
+    in property <bool> install-failed;
+    callback check-for-updates();
+    callback start-update();
+    callback cancel-update();
+    callback open-link(string);
+
     callback refresh();
     callback launch(string);
     callback confirm-switch();
@@ -259,6 +409,7 @@ export component AppWindow inherits Window {
     in-out property <int> empty-at: 5;
     in-out property <int> warning-seconds: 60;
     in-out property <bool> start-with-windows;
+    in-out property <bool> check-updates: true;
     callback settings-changed();
     callback start-with-windows-toggled(bool);
 
@@ -378,6 +529,14 @@ export component AppWindow inherits Window {
                 horizontal-stretch: 0;
                 HorizontalLayout {
                     spacing: 10px;
+                    if root.update-version != "": ActionButton {
+                        text: root.update-stage == UpdateStage.downloading || root.update-stage == UpdateStage.installing
+                            ? @tr("Updating… {}%", round(root.update-progress * 100))
+                            : @tr("Update to {}", root.update-version);
+                        icon: Icons.install;
+                        kind: ButtonKind.accent;
+                        clicked => { root.start-update(); }
+                    }
                     ActionButton {
                         text: root.refreshing ? @tr("Refreshing…") : @tr("Refresh");
                         icon: Icons.refresh;
@@ -687,6 +846,11 @@ export component AppWindow inherits Window {
                 title: @tr("Let it switch for you");
                 body: @tr("Closing the window keeps the app in the tray. When the account in use runs out of its 5-hour or weekly limit, the app moves to the account with the most left, after a short countdown if Antigravity is open. An almost-empty account counts as empty; change the limit and the countdown in Settings.");
             }
+            HelpStep {
+                number: "5";
+                title: @tr("Stay up to date");
+                body: @tr("The app looks for a new version every minute. When one is out, Update appears at the top and in the tray; one click downloads it, checks it and restarts on it.");
+            }
         }
         Text {
             text: @tr("Saved accounts stay on this PC. Windows protects them for your user, so a portable copy on a flash drive carries none: add them once on each PC.");
@@ -783,6 +947,24 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+
+            HorizontalLayout {
+                spacing: 16px;
+                VerticalLayout {
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    Text { text: @tr("Check for updates automatically"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
+                    Text { text: @tr("Looks on GitHub every minute. A new version is installed only when you choose Update."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        label: @tr("Check for updates automatically");
+                        on <=> root.check-updates;
+                        toggled => { root.settings-changed(); }
+                    }
+                }
+            }
         }
 
         HorizontalLayout {
@@ -804,6 +986,26 @@ export component AppWindow inherits Window {
             font-size: Theme.text-sm;
             wrap: word-wrap;
         }
+        UpdatePanel {
+            stage: root.update-stage;
+            version: root.update-version;
+            checked-at: root.update-checked-at;
+            received: root.update-received;
+            total: root.update-total;
+            problem: Copy.problem(root.update-problem-code, root.update-problem-detail);
+            install-failed: root.install-failed;
+            check => { root.check-for-updates(); }
+            update => { root.start-update(); }
+            notes => { root.open-link("notes"); }
+        }
+        HorizontalLayout {
+            alignment: start;
+            Link {
+                text: root.project;
+                label: @tr("Open the GitHub page");
+                clicked => { root.open-link("project"); }
+            }
+        }
         Text {
             text: @tr("MIT License. An independent tool, not affiliated with Google.");
             color: Theme.dust-dim;
@@ -818,6 +1020,67 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             alignment: end;
             ActionButton { text: @tr("Close"); clicked => { root.close-sheet(); } }
+        }
+    }
+
+    if root.sheet == SheetKind.update: Sheet {
+        property <bool> working: root.update-stage == UpdateStage.downloading || root.update-stage == UpdateStage.installing;
+        width: root.width;
+        height: root.height;
+        title: root.update-stage == UpdateStage.failed
+            ? (root.install-failed ? @tr("The update didn't finish") : @tr("Couldn't check for updates"))
+            : @tr("Updating to {}", root.update-version);
+        subtitle: root.update-stage == UpdateStage.failed ? ""
+            : @tr("The app restarts on the new version by itself. Antigravity keeps running.");
+        dismissable: !self.working;
+        dismiss => { root.cancel-update(); }
+
+        if self.working: VerticalLayout {
+            spacing: 10px;
+            Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.ion.with-alpha(0.15);
+                Rectangle {
+                    x: 0;
+                    height: 100%;
+                    border-radius: 3px;
+                    width: parent.width * clamp(root.update-progress, 0, 1);
+                    background: Theme.ion;
+                    animate width { duration: 200ms; easing: ease-out; }
+                }
+            }
+            Text {
+                text: root.update-stage == UpdateStage.downloading
+                    ? @tr("Downloading… {} of {}", root.update-received, root.update-total)
+                    : @tr("Checking the new version and restarting…");
+                color: Theme.dust;
+                font-size: Theme.text-sm;
+            }
+        }
+        if root.update-stage == UpdateStage.failed: Problem {
+            text: Copy.problem(root.update-problem-code, root.update-problem-detail);
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 10px;
+            if root.update-stage == UpdateStage.downloading: ActionButton {
+                text: @tr("Cancel");
+                clicked => { root.cancel-update(); }
+            }
+            if root.update-stage == UpdateStage.failed: ActionButton {
+                text: @tr("Download page");
+                clicked => { root.open-link("download"); }
+            }
+            if root.update-stage == UpdateStage.failed: ActionButton {
+                text: @tr("Close");
+                clicked => { root.cancel-update(); }
+            }
+            if root.update-stage == UpdateStage.failed && root.install-failed && root.update-problem-code != "update.not_writable": ActionButton {
+                text: @tr("Try again");
+                kind: ButtonKind.primary;
+                clicked => { root.start-update(); }
+            }
         }
     }
 

@@ -26,6 +26,19 @@ export global Copy {
             : code == "vault.not_found" ? @tr("That sign-in is no longer in Windows Credential Manager.")
             : code == "vault.system" || code == "vault.unreadable" ? @tr("Windows Credential Manager refused the change: {}", detail)
             : code == "desktop.folder" || code == "desktop.shortcut" || code == "desktop.file" ? @tr("Windows refused: {}", detail)
+            : code == "desktop.open" ? @tr("The browser couldn't be opened: {}", detail)
+            : code == "update.network" ? @tr("Couldn't reach GitHub. Check your connection or proxy.")
+            : code == "update.feed" ? @tr("GitHub answered with an error (HTTP {}).", detail)
+            : code == "update.bad_feed" ? @tr("The release information couldn't be read: {}", detail)
+            : code == "update.no_build" ? @tr("The newest release has no build for this PC.")
+            : code == "update.untrusted" ? @tr("The release points outside this project, so it wasn't used.")
+            : code == "update.download" ? @tr("The download failed (HTTP {}).", detail)
+            : code == "update.size" || code == "update.checksum" ? @tr("The download arrived damaged. Try again.")
+            : code == "update.package" ? @tr("The downloaded package is unusable: {}", detail)
+            : code == "update.not_writable" ? @tr("This copy can't change its own folder ({}). Download the new version from GitHub instead.", detail)
+            : code == "update.file" ? @tr("Windows refused: {}", detail)
+            : code == "update.probe" ? @tr("The new version didn't start correctly, so nothing changed: {}", detail)
+            : code == "update.wait" ? @tr("Finish adding the account, or let the switch finish, then update.")
             : code == "quota.not_saved" ? @tr("This account is no longer saved on this PC.")
             : code == "quota.unreadable" || code == "quota.no_refresh_token" ? @tr("The saved sign-in can't be used. Remove this account and add it again.")
             : code == "quota.sign_in_expired" ? @tr("Sign-in expired. Remove this account and add it again.")
@@ -48,6 +61,7 @@ export global Copy {
             : t.code == "saved-no-shortcut" ? @tr("Saved {}. The desktop shortcut couldn't be created.", t.name)
             : t.code == "add-canceled" ? @tr("Adding was canceled. Your previous sign-in is back.")
             : t.code == "installed" ? @tr("Installed. Open it from the desktop or the Start menu.")
+            : t.code == "updated" ? @tr("Updated to {}.", t.name)
             : self.problem(t.code, t.detail);
     }
 }

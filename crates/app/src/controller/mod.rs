@@ -1,8 +1,11 @@
 //! Connects the main window to the services. Slow work (Credential Manager, closing Antigravity,
-//! Google) runs off the UI thread; results come back through the Slint event loop.
+//! Google, GitHub) runs off the UI thread; results come back through the Slint event loop.
+
+mod updates;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -10,6 +13,7 @@ use std::time::Duration;
 
 use accounts::{AccountsError, AddSession, SavedAccount, is_valid_name};
 use desktop::Preferences;
+use desktop::instance::Request;
 use quota::format::{percent, reset_time};
 use quota::{AccountQuota, Decision, Fuel, decide};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -71,6 +75,9 @@ struct Inner {
     state: Mutex<State>,
     add: Mutex<Option<AddSession>>,
     toast_serial: AtomicI32,
+    updates: Mutex<updates::UpdateState>,
+    /// Set when an update is in place: the app ends and starts this executable.
+    restart: Mutex<Option<PathBuf>>,
 }
 
 impl std::fmt::Debug for Inner {
@@ -84,6 +91,7 @@ pub struct Controller {
     inner: Arc<Inner>,
     _tick: slint::Timer,
     _poll: slint::Timer,
+    _check: slint::Timer,
 }
 
 impl std::fmt::Debug for Controller {
@@ -170,10 +178,10 @@ impl Inner {
             let quota = state.quotas.get(&saved.name.to_lowercase());
             window.set_details(view::details(saved, quota, now, &self.services.clock.time_zone()));
         }
-        Self::update_tray(&state, window.get_start_with_windows());
+        self.update_tray(&state, window.get_start_with_windows());
     }
 
-    fn update_tray(state: &State, start_with_windows: bool) {
+    fn update_tray(&self, state: &State, start_with_windows: bool) {
         let threshold = state.prefs.threshold();
         let rows: Vec<TrayAccount> = state
             .accounts
@@ -194,6 +202,7 @@ impl Inner {
             tray.set_auto_switch(state.prefs.auto_switch);
             tray.set_start_with_windows(start_with_windows);
         });
+        self.update_tray_version();
     }
 
     fn reload_accounts(self: &Arc<Self>) {
@@ -607,7 +616,7 @@ impl Inner {
     }
 
     fn save_prefs(self: &Arc<Self>) {
-        let prefs = self.state().prefs;
+        let prefs = self.state().prefs.clone();
         self.work(
             move |inner| {
                 inner.services.accounts.desktop().preferences().and_then(|store| store.save(&prefs))
@@ -628,7 +637,8 @@ impl Inner {
                 auto_switch: window.get_auto_switch(),
                 empty_at_percent: u8::try_from(window.get_empty_at()).unwrap_or(5),
                 warning_seconds: u16::try_from(window.get_warning_seconds()).unwrap_or(60),
-                ..state.prefs
+                check_updates: window.get_check_updates(),
+                ..state.prefs.clone()
             }
             .normalized();
             state.prefs = chosen;
@@ -836,7 +846,13 @@ impl Inner {
             let inner = self.clone();
             let weak = notice.as_weak();
             notice.on_act(move || {
-                if let Some(notice) = weak.upgrade() {
+                let Some(notice) = weak.upgrade() else { return };
+                if notice.get_kind() == NoticeKind::Update {
+                    Self::close_notice();
+                    if let Some(window) = inner.window.upgrade() {
+                        inner.start_update(&window);
+                    }
+                } else {
                     inner.finish_countdown(&notice.get_from(), &notice.get_to(), true);
                 }
             });
@@ -884,16 +900,20 @@ impl Controller {
             state: Mutex::new(State::default()),
             add: Mutex::new(None),
             toast_serial: AtomicI32::new(0),
+            updates: Mutex::new(updates::UpdateState::default()),
+            restart: Mutex::new(None),
         });
         window.set_version(env!("CARGO_PKG_VERSION").into());
+        window.set_project(updates::display_address(updates::PROJECT).into());
         window.set_accounts(ModelRc::from(Rc::new(VecModel::<AccountView>::default())));
         {
             let desktop = inner.services.accounts.desktop();
             let prefs = desktop.preferences().map(|store| store.load()).unwrap_or_default();
-            inner.state().prefs = prefs;
             window.set_auto_switch(prefs.auto_switch);
             window.set_empty_at(i32::from(prefs.empty_at_percent));
             window.set_warning_seconds(i32::from(prefs.warning_seconds));
+            window.set_check_updates(prefs.check_updates);
+            inner.state().prefs = prefs;
             window.set_start_with_windows(desktop.starts_with_windows());
         }
 
@@ -934,6 +954,13 @@ impl Controller {
         on!(on_quit, |w, i| i.quit(&w));
         on!(on_settings_changed, |w, i| i.settings_changed(&w));
         on!(on_start_with_windows_toggled, |w, i, on| i.set_start_with_windows(&w, on));
+        on!(on_check_for_updates, |w, i| {
+            let _ = &w;
+            i.check_for_updates(true);
+        });
+        on!(on_start_update, |w, i| i.start_update(&w));
+        on!(on_cancel_update, |w, i| i.cancel_update(&w));
+        on!(on_open_link, |w, i, kind| i.open_link(&w, &kind));
         Self::create_tray(window, &inner);
         {
             // Alt+F4 and the taskbar's "Close window" keep the app in the tray, like our close button.
@@ -947,6 +974,17 @@ impl Controller {
             });
         }
 
+        let (tick, poll, check) = Self::start_timers(window, &inner);
+        inner.render(window);
+        inner.reload_accounts();
+        Self { inner, _tick: tick, _poll: poll, _check: check }
+    }
+
+    /// The minute's quota refresh, the add flow's sign-in poll, and the update checks.
+    fn start_timers(
+        window: &AppWindow,
+        inner: &Arc<Inner>,
+    ) -> (slint::Timer, slint::Timer, slint::Timer) {
         let tick = slint::Timer::default();
         {
             let weak = window.as_weak();
@@ -962,10 +1000,18 @@ impl Controller {
             let inner = inner.clone();
             poll.start(slint::TimerMode::Repeated, SIGN_IN_POLL, move || inner.poll_sign_in());
         }
-
-        inner.render(window);
-        inner.reload_accounts();
-        Self { inner, _tick: tick, _poll: poll }
+        let check = slint::Timer::default();
+        {
+            let inner = inner.clone();
+            check.start(slint::TimerMode::Repeated, updates::CHECK_EVERY, move || {
+                inner.scheduled_check();
+            });
+        }
+        {
+            let inner = inner.clone();
+            slint::Timer::single_shot(updates::FIRST_CHECK, move || inner.scheduled_check());
+        }
+        (tick, poll, check)
     }
 
     /// The tray icon and its menu; the app works without one if the system refuses it.
@@ -999,6 +1045,8 @@ impl Controller {
             w.set_sheet(SheetKind::Settings);
         });
         on_tray!(on_quit, |w, i| i.quit(&w));
+        on_tray!(on_update, |w, i| i.start_update(&w));
+        on_tray!(on_open_project, |w, i| i.open_link(&w, "project"));
         TRAY.with_borrow_mut(|slot| *slot = Some(tray));
     }
 
@@ -1014,6 +1062,42 @@ impl Controller {
             Inner::show_window(&window);
         }
     }
+
+    /// Ends the app the way Quit does (the installer asked).
+    pub fn quit(&self) {
+        if let Some(window) = self.inner.window.upgrade() {
+            self.inner.quit(&window);
+        }
+    }
+
+    /// Says the app now runs the version it was updated to, from `from`.
+    pub fn updated(&self, from: &str) {
+        if let Some(window) = self.inner.window.upgrade() {
+            let now = env!("CARGO_PKG_VERSION");
+            tracing::info!(from, to = now, "updated");
+            self.inner.toast(&window, ToastKind::Success, "updated", now, "");
+        }
+    }
+
+    /// What `run` returns once the event loop ends.
+    #[must_use]
+    pub fn outcome(&self) -> Outcome {
+        self.inner
+            .restart
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .map_or(Outcome::Quit, Outcome::Restart)
+    }
+}
+
+/// How the app ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// Quit.
+    Quit,
+    /// An update is in place: start this executable.
+    Restart(PathBuf),
 }
 
 /// How the app was started.
@@ -1025,33 +1109,53 @@ pub enum Start {
     Tray,
 }
 
-/// Runs the app until Quit. `wake` returns true whenever another start asks for the window; it is
-/// polled on its own thread.
+/// Something another process asks the running copy for; `None` when it asked nothing in time.
+pub type Requests = Box<dyn Fn() -> Option<Request> + Send>;
+
+/// Runs the app until Quit. `requests` waits for what other processes ask (show the window, or
+/// quit for the installer); it is polled on its own thread. `updated_from` is the version the
+/// previous copy had, after an update.
 pub fn run(
     services: Services,
     start: Start,
-    wake: Option<Box<dyn Fn() -> bool + Send>>,
-) -> Result<(), slint::PlatformError> {
+    updated_from: Option<&str>,
+    requests: Option<Requests>,
+) -> Result<Outcome, slint::PlatformError> {
+    let exe = services.accounts.desktop().current_exe().to_path_buf();
+    std::thread::spawn(move || updates::clean_up_after_update(&exe));
     let window = AppWindow::new()?;
     let controller = Controller::new(&window, services);
-    if start == Start::Window {
+    if start == Start::Window || updated_from.is_some() {
         controller.show();
     }
-    if let Some(wake) = wake {
+    if let Some(from) = updated_from {
+        controller.updated(from);
+    }
+    if let Some(requests) = requests {
         let weak = window.as_weak();
         std::thread::spawn(move || {
             loop {
-                if wake() {
-                    let _ = weak.upgrade_in_event_loop(|window| Inner::show_window(&window));
+                match requests() {
+                    Some(Request::Show) => {
+                        let _ = weak.upgrade_in_event_loop(|window| Inner::show_window(&window));
+                    }
+                    Some(Request::Quit) => {
+                        tracing::info!("asked to quit by the installer");
+                        let _ = weak.upgrade_in_event_loop(|window| {
+                            window.invoke_quit();
+                        });
+                    }
+                    None => {}
                 }
             }
         });
     }
     slint::run_event_loop_until_quit()?;
     release();
+    let outcome = controller.outcome();
     drop(controller);
     drop(window);
-    Ok(())
+    Ok(outcome)
 }
 
 /// Releases the tray icon and the notice. Call it after the event loop ends, while the window
@@ -1312,7 +1416,7 @@ mod tests {
         rig.window.set_empty_at(12);
         rig.window.set_warning_seconds(30);
         rig.window.invoke_settings_changed();
-        let prefs = rig.controller.inner.state().prefs;
+        let prefs = rig.controller.inner.state().prefs.clone();
         assert_eq!((prefs.empty_at_percent, prefs.warning_seconds), (12, 30));
         let store = rig.controller.inner.services.accounts.desktop().preferences().unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
