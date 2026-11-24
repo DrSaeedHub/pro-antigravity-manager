@@ -5,6 +5,7 @@ use std::fs;
 use antigravity::{FakeHost, HostSettings};
 use jiff::tz::TimeZone;
 use kernel::{FixedFolders, KnownFolders, ManualClock};
+use net::{NoProxy, ProxyResolver};
 use serde_json::json;
 use vault::MemoryStore;
 use wiremock::matchers::{body_string, body_string_contains, header, method, path};
@@ -12,7 +13,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
 use crate::client::tests::{ID_A, ID_B, SECRET_A, SECRET_B};
-use crate::proxy::NoProxy;
 use crate::secret_box::FakeBox;
 
 const SLOT: &str = "slot:work";

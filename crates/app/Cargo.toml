@@ -21,6 +21,7 @@ antigravity.workspace = true
 desktop.workspace = true
 jiff.workspace = true
 kernel.workspace = true
+net.workspace = true
 quota.workspace = true
 slint.workspace = true
 thiserror.workspace = true

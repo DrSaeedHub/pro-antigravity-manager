@@ -7,8 +7,9 @@ use accounts::{AccountSettings, Accounts};
 use antigravity::{Antigravity, AppHost, HostSettings};
 use desktop::{Desktop, DesktopSettings, Shell};
 use kernel::{Clock, KnownFolders};
+use net::ProxyResolver;
 use quota::client::ClientCache;
-use quota::{ProxyResolver, QuotaService, QuotaSettings, SecretBox};
+use quota::{QuotaService, QuotaSettings, SecretBox};
 use vault::CredentialStore;
 
 /// Everything the UI needs.
@@ -114,7 +115,7 @@ pub fn windows_parts() -> Parts {
         folders: Arc::new(kernel::SystemFolders),
         shell: Arc::new(desktop::WindowsShell),
         secret_box: Arc::new(quota::Dpapi),
-        proxy: Arc::new(quota::SystemProxy::new()),
+        proxy: Arc::new(net::SystemProxy::new()),
         clock: Arc::new(kernel::SystemClock),
         current_exe: std::env::current_exe()
             .unwrap_or_else(|_| PathBuf::from("AntigravityAccountSwitcher.exe")),
@@ -131,7 +132,7 @@ pub fn preview_parts(root: &std::path::Path) -> Parts {
         folders: Arc::new(kernel::FixedFolders::new(root)),
         shell: Arc::new(desktop::FakeShell::new()),
         secret_box: Arc::new(quota::FakeBox),
-        proxy: Arc::new(quota::NoProxy),
+        proxy: Arc::new(net::NoProxy),
         clock: Arc::new(kernel::SystemClock),
         current_exe: root.join("AntigravityAccountSwitcher.exe"),
         quota_settings: QuotaSettings {

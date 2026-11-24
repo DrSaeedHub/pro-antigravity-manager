@@ -135,7 +135,7 @@ impl Session {
             folders: Arc::new(kernel::FixedFolders::new(&self.root)),
             shell: Arc::new(desktop::FakeShell::new()),
             secret_box: Arc::new(quota::FakeBox),
-            proxy: Arc::new(quota::NoProxy),
+            proxy: Arc::new(net::NoProxy),
             clock: Arc::new(kernel::ManualClock::new(self.now, jiff::tz::TimeZone::UTC)),
             current_exe: self.root.join("AntigravityAccountSwitcher.exe"),
             quota_settings: quota::QuotaSettings {

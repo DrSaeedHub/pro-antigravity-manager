@@ -11,7 +11,6 @@ pub mod format;
 pub mod fuel;
 pub mod model;
 pub mod parse;
-pub mod proxy;
 pub mod secret_box;
 pub mod service;
 #[cfg(windows)]
@@ -20,8 +19,7 @@ pub mod windows;
 pub use error::QuotaError;
 pub use fuel::{Decision, Fuel, decide};
 pub use model::{AccountQuota, ModelQuota, QuotaBucket, QuotaGroup};
-pub use proxy::{NoProxy, ProxyResolver};
 pub use secret_box::{FakeBox, SecretBox};
 pub use service::{QuotaService, QuotaSettings};
 #[cfg(windows)]
-pub use windows::{Dpapi, SystemProxy};
+pub use windows::Dpapi;

@@ -8,6 +8,7 @@ use std::time::Duration;
 use antigravity::Antigravity;
 use jiff::{SignedDuration, Timestamp};
 use kernel::{Clock, Secret, json};
+use net::{HttpOptions, ProxyResolver};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde_json::Value;
 use vault::{CredentialStore, SignIn, SignInError};
@@ -16,7 +17,6 @@ use crate::client::{ClientCache, ClientCredentials, Discovered, scan};
 use crate::error::QuotaError;
 use crate::model::AccountQuota;
 use crate::parse;
-use crate::proxy::ProxyResolver;
 
 /// Endpoints and limits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,15 +57,7 @@ impl QuotaSettings {
         &self,
         proxy: Arc<dyn ProxyResolver>,
     ) -> Result<reqwest::Client, QuotaError> {
-        reqwest::Client::builder()
-            .user_agent(self.user_agent.clone())
-            .timeout(self.timeout)
-            .gzip(true)
-            .deflate(true)
-            .no_proxy()
-            .proxy(reqwest::Proxy::custom(move |url| proxy.proxy_for(url.as_str())))
-            .tls_backend_native()
-            .build()
+        net::client(&HttpOptions::new(self.user_agent.clone(), self.timeout), proxy)
             .map_err(|error| QuotaError::Network(error.to_string()))
     }
 }
@@ -110,16 +102,6 @@ impl TokenFailure {
 struct StoredAccess {
     token: Option<Secret>,
     expiry: Option<Timestamp>,
-}
-
-fn network(error: &reqwest::Error) -> String {
-    let mut text = error.to_string();
-    let mut source = std::error::Error::source(error);
-    while let Some(cause) = source {
-        text = format!("{text}: {cause}");
-        source = cause.source();
-    }
-    text
 }
 
 /// `application/x-www-form-urlencoded`, encoding everything but the unreserved characters.
@@ -243,10 +225,12 @@ impl QuotaService {
                 .body(body.to_owned())
                 .send()
                 .await
-                .map_err(|error| QuotaError::Network(network(&error)))?;
+                .map_err(|error| QuotaError::Network(net::describe(&error)))?;
             let status = response.status().as_u16();
-            let text =
-                response.text().await.map_err(|error| QuotaError::Network(network(&error)))?;
+            let text = response
+                .text()
+                .await
+                .map_err(|error| QuotaError::Network(net::describe(&error)))?;
             if status == 200 {
                 return serde_json::from_str(&text).map_err(|_| QuotaError::Api {
                     method: method.to_owned(),
@@ -385,9 +369,10 @@ impl QuotaService {
             .body(body)
             .send()
             .await
-            .map_err(|error| TokenFailure::Network(network(&error)))?;
+            .map_err(|error| TokenFailure::Network(net::describe(&error)))?;
         let status = response.status().as_u16();
-        let text = response.text().await.map_err(|error| TokenFailure::Network(network(&error)))?;
+        let text =
+            response.text().await.map_err(|error| TokenFailure::Network(net::describe(&error)))?;
         let answer = serde_json::from_str::<Value>(&text).unwrap_or(Value::Null);
         if status != 200 {
             let code = json::text(&answer, "error").unwrap_or_else(|| format!("http_{status}"));

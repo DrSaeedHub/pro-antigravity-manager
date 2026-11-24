@@ -18,6 +18,7 @@ antigravity = { path = "crates/antigravity" }
 desktop = { path = "crates/desktop" }
 accounts = { path = "crates/accounts" }
 quota = { path = "crates/quota" }
+net = { path = "crates/net" }
 
 # External crates, pinned to the versions checked on 2026-11-23.
 jiff = "1.0.2"
