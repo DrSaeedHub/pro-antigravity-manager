@@ -247,16 +247,29 @@ mod tests {
         }
     }
 
+    /// `path` with every 8.3 short name (`RUNNER~1`) expanded, as the Shell stores link targets.
+    fn long_path(path: &Path) -> PathBuf {
+        use windows::Win32::Storage::FileSystem::GetLongPathNameW;
+        let mut buffer = [0u16; 1024];
+        // SAFETY: the path string outlives the call; the buffer is local and its size is passed.
+        let length = unsafe { GetLongPathNameW(&text(path), Some(&mut buffer)) } as usize;
+        assert!(length > 0 && length < buffer.len(), "{}", path.display());
+        PathBuf::from(String::from_utf16_lossy(&buffer[..length]))
+    }
+
     #[test]
     fn writes_a_shortcut_windows_can_read_back() {
         let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("Some App.exe");
+        // GitHub's runners keep their temp folder under a short name; the Shell answers with the
+        // long one, so the test speaks in long names too.
+        let root = long_path(dir.path());
+        let target = root.join("Some App.exe");
         std::fs::write(&target, b"x").unwrap();
         let shortcut = Shortcut {
-            path: dir.path().join("Antigravity - work.lnk"),
+            path: root.join("Antigravity - work.lnk"),
             target: target.clone(),
             arguments: "--launch \"work\"".into(),
-            working_dir: dir.path().to_path_buf(),
+            working_dir: root.clone(),
             icon: target.clone(),
             icon_index: 0,
         };
