@@ -1008,8 +1008,13 @@ impl Controller {
             });
         }
         {
-            let inner = inner.clone();
-            slint::Timer::single_shot(updates::FIRST_CHECK, move || inner.scheduled_check());
+            // A one-shot timer cannot be stopped, so it holds the controller only weakly.
+            let inner = Arc::downgrade(inner);
+            slint::Timer::single_shot(updates::FIRST_CHECK, move || {
+                if let Some(inner) = inner.upgrade() {
+                    inner.scheduled_check();
+                }
+            });
         }
         (tick, poll, check)
     }

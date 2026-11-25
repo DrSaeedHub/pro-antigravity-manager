@@ -108,12 +108,18 @@ pub fn build(parts: Parts) -> Result<Services, BootError> {
         .thread_name("switcher-worker")
         .enable_all()
         .build()?;
+    let runtime = Arc::new(runtime);
+    // The runtime lives until the process ends. Slint can keep a callback that holds the services
+    // in thread-local storage past the event loop (a timer not yet due, a result still queued);
+    // if that last copy dropped the runtime during process exit, it would wait for worker threads
+    // Windows has already stopped, and the process would never end.
+    std::mem::forget(Arc::clone(&runtime));
     Ok(Services {
         accounts,
         quota: Arc::new(quota),
         updater: Arc::new(updater),
         clock: parts.clock,
-        runtime: Arc::new(runtime),
+        runtime,
     })
 }
 
