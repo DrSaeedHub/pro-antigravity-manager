@@ -10,12 +10,14 @@ use std::time::Duration;
 
 use app::controller::{Outcome, Start};
 use app::{bootstrap, cli, controller, window};
-use desktop::instance::Claim;
+use desktop::instance::{Claim, Reached, RunningCopy};
 
 /// The name that marks the running copy for this Windows user (the installer uses it too).
 const RUNNING_COPY: &str = "AntigravityAccountSwitcher";
-/// How long a second start waits for the running copy to show its window.
+/// How long a second start waits for each answer of the running copy.
 const ANSWER_WITHIN: Duration = Duration::from_secs(3);
+/// How long a second start keeps asking a running copy that is alive but does not answer.
+const PATIENCE: Duration = Duration::from_secs(10);
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -31,7 +33,7 @@ fn main() -> ExitCode {
     let services = match bootstrap::build(bootstrap::windows_parts()) {
         Ok(services) => services,
         Err(error) => {
-            window::show_startup_problem(&error.to_string());
+            window::show_problem("app.startup", &error.to_string());
             return ExitCode::FAILURE;
         }
     };
@@ -50,30 +52,58 @@ fn main() -> ExitCode {
 
     let start = if cli::tray_start(&args) { Start::Tray } else { Start::Window };
     let updated_from = cli::updated_from(&args);
-    match desktop::instance::claim(RUNNING_COPY) {
-        Ok(Claim::AlreadyRunning) if start == Start::Tray => {
-            tracing::info!("already running");
-            ExitCode::SUCCESS
-        }
-        Ok(Claim::AlreadyRunning) => {
-            if desktop::instance::wake_running_copy(RUNNING_COPY, ANSWER_WITHIN) {
-                tracing::info!("already running: showed its window");
-                return ExitCode::SUCCESS;
-            }
-            // The other copy does not answer (it hangs or is ending): run anyway.
-            tracing::warn!("the running copy does not answer; starting another");
-            finish(controller::run(services, start, updated_from, None), None)
-        }
-        Ok(Claim::First(running)) => {
+    let running = match become_running_copy(start) {
+        Ok(running) => running,
+        Err(code) => return code,
+    };
+    match running {
+        Some(running) => {
             let running = Arc::new(running);
             let listening = running.clone();
             let requests = move || listening.wait(Duration::from_secs(3600));
             let outcome = controller::run(services, start, updated_from, Some(Box::new(requests)));
             finish(outcome, Some(&running))
         }
+        None => finish(controller::run(services, start, updated_from, None), None),
+    }
+}
+
+/// One copy per Windows user. When one already runs, its window comes back (restored and in
+/// front) and this start ends; a quiet start (`--tray`) just ends. The lock is taken over only
+/// from a holder that is gone. `Err` is this start's exit code; `Ok(None)` runs unguarded
+/// because Windows refused the lock itself.
+fn become_running_copy(start: Start) -> Result<Option<RunningCopy>, ExitCode> {
+    let quiet = start == Start::Tray;
+    match desktop::instance::claim(RUNNING_COPY) {
+        Ok(Claim::First(running)) => Ok(Some(running)),
+        Ok(Claim::AlreadyRunning) => {
+            match desktop::instance::reach(RUNNING_COPY, quiet, ANSWER_WITHIN, PATIENCE) {
+                Reached::Running => {
+                    tracing::info!(quiet, "already running: brought its window back");
+                    Err(ExitCode::SUCCESS)
+                }
+                Reached::Unresponsive => {
+                    tracing::warn!("a running copy does not answer; not starting another");
+                    if !quiet {
+                        window::show_problem("app.not_responding", "");
+                    }
+                    Err(ExitCode::FAILURE)
+                }
+                Reached::Gone => match desktop::instance::take_over(RUNNING_COPY) {
+                    Ok(running) => {
+                        tracing::warn!("the previous copy is gone; this one takes over");
+                        Ok(Some(running))
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "running without the single-copy guard");
+                        Ok(None)
+                    }
+                },
+            }
+        }
         Err(error) => {
             tracing::warn!(%error, "running without the single-copy guard");
-            finish(controller::run(services, start, updated_from, None), None)
+            Ok(None)
         }
     }
 }
@@ -81,7 +111,7 @@ fn main() -> ExitCode {
 /// Ends the process; after an update, gives up the single-copy lock and starts the new version.
 fn finish(
     outcome: Result<Outcome, slint::PlatformError>,
-    running: Option<&desktop::instance::RunningCopy>,
+    running: Option<&RunningCopy>,
 ) -> ExitCode {
     match outcome {
         Ok(Outcome::Quit) => ExitCode::SUCCESS,

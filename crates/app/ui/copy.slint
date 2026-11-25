@@ -39,6 +39,7 @@ export global Copy {
             : code == "update.file" ? @tr("Windows refused: {}", detail)
             : code == "update.probe" ? @tr("The new version didn't start correctly, so nothing changed: {}", detail)
             : code == "update.wait" ? @tr("Finish adding the account, or let the switch finish, then update.")
+            : code == "app.not_responding" ? @tr("Antigravity Account Switcher is already running but does not respond. End it in Task Manager, then open it again.")
             : code == "quota.not_saved" ? @tr("This account is no longer saved on this PC.")
             : code == "quota.unreadable" || code == "quota.no_refresh_token" ? @tr("The saved sign-in can't be used. Remove this account and add it again.")
             : code == "quota.sign_in_expired" ? @tr("Sign-in expired. Remove this account and add it again.")

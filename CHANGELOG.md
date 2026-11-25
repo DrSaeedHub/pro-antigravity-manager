@@ -9,6 +9,11 @@
   SHA-256 and that it starts and reports the right version, puts it in place and restarts on it.
   Nothing is installed without that click. Automatic checks can be turned off in Settings; About
   has Check for updates.
+- Opening the app while it runs always brings the running copy's window back, restored from
+  minimized or from the tray and in front, and never opens a second copy. That holds even when an
+  earlier copy hangs while closing and still holds the single-copy lock (Windows can leave one
+  behind): the new start takes over instead of running beside it. A copy that is alive but does
+  not respond is left alone, and a note says so.
 - About and the tray menu link to the project's GitHub page.
 - Every release has an installer and a portable zip. The installer needs no administrator rights,
   adds Start menu and desktop shortcuts (Start with Windows is a choice), and lists the app in

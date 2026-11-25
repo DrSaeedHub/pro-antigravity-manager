@@ -24,13 +24,14 @@ fn decorate(attributes: winit::window::WindowAttributes) -> winit::window::Windo
     }
 }
 
-/// Shows why the app could not start, in the small launch window, and waits until it is closed.
-pub fn show_startup_problem(detail: &str) {
+/// Shows why the app did not start (`code`, with `detail` when it helps), in the small launch
+/// window, and waits until it is closed.
+pub fn show_problem(code: &str, detail: &str) {
     use slint::ComponentHandle;
 
     let Ok(window) = crate::ui::LaunchWindow::new() else { return };
     window.set_account("Antigravity".into());
-    window.set_problem_code("app.startup".into());
+    window.set_problem_code(code.into());
     window.set_problem_detail(detail.into());
     window.set_stage(crate::ui::LaunchStage::Failed);
     window.on_cancel(|| {

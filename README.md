@@ -55,7 +55,7 @@ shortcuts keep working.
 
 | Command | What it does |
 |---|---|
-| `AntigravityAccountSwitcher.exe` | The window and the tray icon. A second start shows the running copy and exits |
+| `AntigravityAccountSwitcher.exe` | The window and the tray icon. A second start brings the running copy's window back (restored, in front) and exits |
 | `AntigravityAccountSwitcher.exe --tray` | Starts in the tray, without the window (Start with Windows uses it); exits quietly if a copy already runs |
 | `AntigravityAccountSwitcher.exe --launch <name>` | What an account's desktop shortcut runs: the small switch window only |
 | `AntigravityAccountSwitcher.exe --version` | Prints the version and exits (the updater asks a downloaded copy this before trusting it) |
@@ -170,7 +170,10 @@ the first time a notice says so. The tray menu lists every account with its 5-ho
 quota, the active one marked with a dot; picking one is the same as its card's Switch button, and
 the window opens only if a question has to be asked. A new version, the GitHub page, Settings and
 Quit are there too. The icon's tooltip carries the active account's numbers; a left click opens
-the window. Only one copy runs per Windows user.
+the window. **Only one copy runs per Windows user**: opening the app again brings the running
+copy's window back, restored and in front, even from the tray. Windows can leave a copy hanging
+while it closes, still holding the single-copy lock; the next start sees that its process is
+ending and takes over instead of starting beside it.
 
 | The tray menu | The first close |
 |---|---|
@@ -270,7 +273,7 @@ The first start has nothing to show, and says what to do next:
 | **Switching** | One click, or a double-click on the card · asks before closing an open Antigravity · close request, then ending its processes, 8 s each · the credential copied whole, never edited · the active account just starts Antigravity · nothing blocks the window |
 | **Adding** | Guided: name → close Antigravity → sign in → save · the new sign-in noticed every 2 s, with its email · the saved copy read back · desktop shortcut created · Cancel, a failure or Quit restores the previous sign-in |
 | **Shortcuts** | `Antigravity - <name>.lnk` per account, with Antigravity's icon · `--launch <name>` window that asks, switches and reports · aimed at the installed copy when there is one · removed with the account, and by the uninstaller |
-| **Tray** | Closing keeps it running · every account's 5-hour and weekly quota in the menu · pick an account to switch · Update to a new version · automatic switching and Start with Windows as check items · Settings, the GitHub page and Quit · the active account's quota in the tooltip · one running copy per Windows user |
+| **Tray** | Closing keeps it running · every account's 5-hour and weekly quota in the menu · pick an account to switch · Update to a new version · automatic switching and Start with Windows as check items · Settings, the GitHub page and Quit · the active account's quota in the tooltip · one running copy per Windows user: opening it again restores that copy's window, and a copy stuck while closing is taken over, never doubled |
 | **Automatic switching** | Threshold 1–50% (5%) on the 5-hour and weekly limits · the most-left account as target, unknown quota never one · countdown notice 0–600 s (60 s) with Switch now and Not now · a quiet sign-in change when Antigravity is closed · one notice with the earliest refill when every account is empty · waits for a fresh reading after each switch |
 | **Updates** | A check 5 s after start and every 60 s, from GitHub's download network, through the Windows proxy · Update in the header, the tray and About · one corner notice per version while the window is hidden · progress and Cancel · HTTPS from this repository only, size, SHA-256 and a `--version` answer checked before anything is replaced · the running file renamed aside, never overwritten, put back if the swap fails · restart on the new version with a note · old files cleaned on the next start · waits while an account is being added or a switch runs · prereleases and older versions never offered · automatic checks can be turned off |
 | **Install** | A per-user installer (no administrator rights, Start menu, desktop, optional Start with Windows, Installed apps, an uninstaller that keeps settings and accounts) · or a portable executable · Install on this PC from the portable copy · both update themselves |
