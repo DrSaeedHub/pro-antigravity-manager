@@ -403,6 +403,9 @@ export component AppWindow inherits Window {
     callback add-cancel();
     callback sheet-closed();
     callback close-window();
+    // Minimizes through the window system: Slint never sets `minimized` back to false when the
+    // window is restored from the taskbar, so setting it to true again would do nothing.
+    callback minimize-window();
     callback quit();
 
     // Settings
@@ -479,7 +482,7 @@ export component AppWindow inherits Window {
         }
         HorizontalLayout {
             alignment: end;
-            WindowButton { icon: Icons.minimize; label: @tr("Minimize"); clicked => { root.minimized = true; } }
+            WindowButton { icon: Icons.minimize; label: @tr("Minimize"); clicked => { root.minimize-window(); } }
             WindowButton {
                 icon: root.maximized ? Icons.restore : Icons.maximize;
                 label: root.maximized ? @tr("Restore") : @tr("Maximize");
@@ -840,12 +843,12 @@ export component AppWindow inherits Window {
             HelpStep {
                 number: "3";
                 title: @tr("Watch the fuel");
-                body: @tr("Each orbit is a limit: outer weekly, middle 5-hour, inner the lowest Gemini model. Quota refreshes every minute; open a card's details for every model.");
+                body: @tr("Each orbit is a limit: outer the Claude and GPT weekly limit, middle their 5-hour limit, inner Gemini's 5-hour or weekly limit, whichever has less left. Quota refreshes every minute; open a card's details for both groups and every model.");
             }
             HelpStep {
                 number: "4";
                 title: @tr("Let it switch for you");
-                body: @tr("Closing the window keeps the app in the tray. When the account in use runs out of its 5-hour or weekly limit, the app moves to the account with the most left, after a short countdown if Antigravity is open. An almost-empty account counts as empty; change the limit and the countdown in Settings.");
+                body: @tr("Closing the window keeps the app in the tray. When the account in use runs out of a 5-hour or weekly limit, of Gemini or of Claude and GPT, the app moves to the account with the most left of that group, after a short countdown if Antigravity is open. An almost-empty account counts as empty; change the limit and the countdown in Settings.");
             }
             HelpStep {
                 number: "5";
@@ -900,7 +903,7 @@ export component AppWindow inherits Window {
                     spacing: 3px;
                     horizontal-stretch: 1;
                     Text { text: @tr("Counts as out of quota at"); color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
-                    Text { text: @tr("A 5-hour or weekly limit at or below this is treated as empty, so the app never moves to an account that is almost empty too."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+                    Text { text: @tr("A 5-hour or weekly limit (of Gemini, or of Claude and GPT) at or below this is treated as empty, so the app never moves to an account that is almost empty too."); color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
                 }
                 Stepper {
                     label: @tr("out of quota limit");

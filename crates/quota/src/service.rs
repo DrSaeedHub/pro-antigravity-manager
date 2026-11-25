@@ -18,14 +18,51 @@ use crate::error::QuotaError;
 use crate::model::AccountQuota;
 use crate::parse;
 
+/// The Antigravity version the quota calls name when the installed one is older or unknown.
+/// Google sends the Gemini models' limits only to Antigravity 2.30 and later.
+pub const ANTIGRAVITY_VERSION: &str = "2.35.1";
+
+/// Go's name for the processor, as Antigravity's language server puts it in its `User-Agent`.
+const fn processor() -> &'static str {
+    if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" }
+}
+
+/// The `User-Agent` of the quota calls: Antigravity's own, `antigravity/<version> windows/amd64`,
+/// followed by this app's name. Google shapes the quota summary by that version: an older one,
+/// or any other name, gets the Claude and GPT group without the Gemini one.
+#[must_use]
+pub fn client_name(antigravity_version: &str) -> String {
+    format!(
+        "antigravity/{antigravity_version} windows/{} antigravity-account-switcher/{}",
+        processor(),
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+fn version_numbers(version: &str) -> Option<Vec<u64>> {
+    version.trim().split('.').map(|part| part.parse().ok()).collect()
+}
+
+/// The version to name: `installed` when it is a version at least as new as the known one.
+fn named_version(installed: Option<&str>) -> &str {
+    let known = version_numbers(ANTIGRAVITY_VERSION);
+    match installed {
+        Some(version) if version_numbers(version).is_some_and(|numbers| Some(numbers) >= known) => {
+            version.trim()
+        }
+        _ => ANTIGRAVITY_VERSION,
+    }
+}
+
 /// Endpoints and limits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuotaSettings {
     /// Google's OAuth token endpoint.
     pub token_url: String,
-    /// The Cloud Code API, ending with `v1internal:`.
+    /// The Cloud Code API, ending with `v1internal:`. Antigravity's own server: the other one
+    /// (`cloudcode-pa`) reports every limit as full.
     pub api_base: String,
-    /// The `User-Agent` header.
+    /// The `User-Agent` header (see [`client_name`]).
     pub user_agent: String,
     /// The limit for each HTTP request.
     pub timeout: Duration,
@@ -41,8 +78,8 @@ impl Default for QuotaSettings {
     fn default() -> Self {
         Self {
             token_url: "https://oauth2.googleapis.com/token".into(),
-            api_base: "https://cloudcode-pa.googleapis.com/v1internal:".into(),
-            user_agent: format!("antigravity-account-switcher/{}", env!("CARGO_PKG_VERSION")),
+            api_base: "https://daily-cloudcode-pa.googleapis.com/v1internal:".into(),
+            user_agent: client_name(ANTIGRAVITY_VERSION),
             timeout: Duration::from_secs(25),
             token_margin: SignedDuration::from_mins(2),
             cache_entropy: b"antigravity-switcher-oauth-client".to_vec(),
@@ -52,6 +89,14 @@ impl Default for QuotaSettings {
 }
 
 impl QuotaSettings {
+    /// These settings with a `User-Agent` naming the installed Antigravity's version, or the
+    /// known one when that is newer or the installed one is not known.
+    #[must_use]
+    pub fn for_antigravity(mut self, installed: Option<&str>) -> Self {
+        self.user_agent = client_name(named_version(installed));
+        self
+    }
+
     /// The HTTP client for these settings, sending through `proxy`.
     pub fn http_client(
         &self,

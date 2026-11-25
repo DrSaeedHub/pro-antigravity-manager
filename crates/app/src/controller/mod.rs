@@ -198,8 +198,8 @@ impl Inner {
             tray.set_accounts(ModelRc::new(VecModel::from(rows)));
             let active = active.unwrap_or_default();
             tray.set_active_name(active.name);
-            tray.set_active_five_hour(active.five_hour);
-            tray.set_active_weekly(active.weekly);
+            tray.set_active_claude(active.claude);
+            tray.set_active_gemini(active.gemini);
             tray.set_auto_switch(state.prefs.auto_switch);
             tray.set_start_with_windows(start_with_windows);
         });
@@ -720,15 +720,11 @@ impl Inner {
         }
         match decide(&active, &fuels, threshold) {
             Decision::Stay => state.all_empty_noticed = false,
-            Decision::SwitchTo(target) => {
+            Decision::SwitchTo { account: target, left } => {
                 state.all_empty_noticed = false;
                 state.switching = true;
                 let warning = state.prefs.warning_seconds;
-                let left = fuels
-                    .iter()
-                    .find(|fuel| fuel.account == target)
-                    .map(|fuel| percent(fuel.left()))
-                    .unwrap_or_default();
+                let left = percent(left);
                 drop(state);
                 tracing::info!(from = %active, to = %target, "out of quota: switching automatically");
                 if warning > 0 && self.services.accounts.antigravity().is_running() {
@@ -954,6 +950,10 @@ impl Controller {
             Inner::sheet_problem(&w, None);
         });
         on!(on_close_window, |w, i| i.close_window(&w));
+        on!(on_minimize_window, |w, i| {
+            let _ = &i;
+            crate::window::minimize(w.window());
+        });
         on!(on_quit, |w, i| i.quit(&w));
         on!(on_settings_changed, |w, i| i.settings_changed(&w));
         on!(on_start_with_windows_toggled, |w, i, on| i.set_start_with_windows(&w, on));

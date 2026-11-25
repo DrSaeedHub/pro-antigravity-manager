@@ -12,7 +12,8 @@ and the impact. Remove personal data from screenshots and logs first.
   by Windows for the current user. The app copies Antigravity's credential (`gemini:antigravity`)
   as a whole and never changes its content or writes it to a file.
 - Access tokens live in memory only. Refresh tokens are sent only to `oauth2.googleapis.com`;
-  quota requests go only to `cloudcode-pa.googleapis.com`, through the Windows proxy settings.
+  quota requests go only to `daily-cloudcode-pa.googleapis.com` (the server Antigravity itself
+  uses), through the Windows proxy settings.
 - Updates are read from this project's GitHub releases over HTTPS only. A download is used only
   if it comes from this repository, matches the size and SHA-256 in the release's `latest.json`,
   and the executable inside it starts and reports the version it was offered; the running

@@ -4,7 +4,7 @@ use accounts::SavedAccount;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use quota::format::{countdown, percent, reset_time};
-use quota::{AccountQuota, QuotaError};
+use quota::{AccountQuota, QuotaBucket, QuotaError};
 use slint::{ModelRc, SharedString, VecModel};
 
 use crate::ui::{
@@ -44,11 +44,20 @@ pub fn gauge(fraction: Option<f64>, reset: Option<Timestamp>, now: Timestamp) ->
             percent: percent(value).into(),
             resets: countdown(value, reset, now).unwrap_or_default().into(),
             low: value < LOW,
+            window: SharedString::new(),
         },
     }
 }
 
-/// A card for `saved`, with its quota when known.
+/// One limit on a card, with its window (`5h`, `weekly`, or empty for a single model).
+fn limit(bucket: Option<&QuotaBucket>, now: Timestamp) -> Gauge {
+    let mut shown = gauge(bucket.map(|b| b.fraction), bucket.and_then(|b| b.reset), now);
+    shown.window = bucket.map(|b| b.window.to_ascii_lowercase()).unwrap_or_default().into();
+    shown
+}
+
+/// A card for `saved`, with its quota when known: the Claude and GPT group's 5-hour and weekly
+/// limits, and Gemini's tighter limit.
 #[must_use]
 pub fn account_view(
     saved: &SavedAccount,
@@ -76,12 +85,9 @@ pub fn account_view(
     }
     view.state = CardState::Ready;
     view.plan = quota.plan.clone().unwrap_or_default().to_uppercase().into();
-    let five_hour = quota.bucket("5h");
-    let weekly = quota.bucket("weekly");
-    let gemini = quota.lowest_gemini();
-    view.five_hour = gauge(five_hour.map(|b| b.fraction), five_hour.and_then(|b| b.reset), now);
-    view.weekly = gauge(weekly.map(|b| b.fraction), weekly.and_then(|b| b.reset), now);
-    view.gemini = gauge(gemini.map(|m| m.fraction), gemini.and_then(|m| m.reset), now);
+    view.five_hour = limit(quota.bucket("5h"), now);
+    view.weekly = limit(quota.bucket("weekly"), now);
+    view.gemini = limit(quota.gemini().as_ref(), now);
     view
 }
 
@@ -128,7 +134,8 @@ fn bucket_kind(window: &str) -> RowKind {
     }
 }
 
-/// The details drawer for `saved`.
+/// The details drawer for `saved`: every group's limits in Google's order (the Gemini group's in
+/// Gemini's colour), then every model.
 #[must_use]
 pub fn details(
     saved: &SavedAccount,
@@ -164,9 +171,14 @@ pub fn details(
                     .buckets
                     .iter()
                     .map(|b| {
+                        let kind = if group.is_gemini() {
+                            RowKind::Gemini
+                        } else {
+                            bucket_kind(&b.window)
+                        };
                         row(
                             &bucket_label(&b.window, &b.name, &b.id),
-                            bucket_kind(&b.window),
+                            kind,
                             b.fraction,
                             b.reset,
                             now,
@@ -213,7 +225,8 @@ pub fn is_active(
     }
 }
 
-/// One account in the tray menu.
+/// One account in the tray menu: what is left of Claude and GPT (the tighter of its 5-hour and
+/// weekly limits) and of Gemini.
 #[must_use]
 pub fn tray_account(
     saved: &SavedAccount,
@@ -233,10 +246,9 @@ pub fn tray_account(
         row.fuel = TrayFuel::Unavailable;
         return row;
     }
-    let five_hour = quota.bucket("5h").map(|b| b.fraction);
-    let weekly = quota.bucket("weekly").map(|b| b.fraction);
-    row.five_hour = text(five_hour).into();
-    row.weekly = text(weekly).into();
+    let claude = quota::tighter(quota.bucket("5h"), quota.bucket("weekly")).map(|b| b.fraction);
+    row.claude = text(claude).into();
+    row.gemini = text(quota.gemini().map(|b| b.fraction)).into();
     row.fuel = match quota::Fuel::from_quota(quota, threshold) {
         Some(fuel) if fuel.is_empty(threshold) => TrayFuel::Empty,
         Some(_) => TrayFuel::Ready,
@@ -264,6 +276,26 @@ mod tests {
         let mut quota = AccountQuota::new("work", at("2026-11-23T10:00:00Z"));
         quota.email = Some("work@example.com".into());
         quota.plan = Some("Google AI Pro".into());
+        quota.groups.push(QuotaGroup {
+            name: "Gemini Models".into(),
+            description: String::new(),
+            buckets: vec![
+                QuotaBucket {
+                    id: "gemini-5h".into(),
+                    name: String::new(),
+                    window: "5h".into(),
+                    fraction: 0.95,
+                    reset: Some(at("2026-11-23T14:00:00Z")),
+                },
+                QuotaBucket {
+                    id: "gemini-weekly".into(),
+                    name: String::new(),
+                    window: "weekly".into(),
+                    fraction: 0.4,
+                    reset: Some(at("2026-11-29T00:00:00Z")),
+                },
+            ],
+        });
         quota.groups.push(QuotaGroup {
             name: "Claude and GPT".into(),
             description: String::new(),
@@ -353,8 +385,22 @@ mod tests {
         assert!(view.five_hour.low);
         assert_eq!(view.weekly.percent, "100%");
         assert_eq!(view.weekly.resets, "", "a full limit shows no countdown");
-        assert_eq!(view.gemini.percent, "55%");
+        assert_eq!(view.five_hour.window, "5h");
+        assert_eq!(view.weekly.window, "weekly");
+        assert_eq!(view.gemini.percent, "40%", "Gemini's tighter limit, not a model's");
+        assert_eq!(view.gemini.window, "weekly");
         assert!(view.gemini.present);
+    }
+
+    #[test]
+    fn without_a_gemini_group_the_card_shows_the_lowest_gemini_model() {
+        let mut quota = sample();
+        quota.groups.remove(0);
+        let view =
+            account_view(&saved("work", None), Some(&quota), None, at("2026-11-23T10:00:00Z"));
+        assert_eq!(view.gemini.percent, "55%");
+        assert_eq!(view.gemini.window, "");
+        assert_eq!(view.five_hour.percent, "12%");
     }
 
     #[test]
@@ -362,6 +408,7 @@ mod tests {
         let quota = AccountQuota::new("x", at("2026-11-23T10:00:00Z"));
         let view = account_view(&saved("x", None), Some(&quota), None, at("2026-11-23T10:00:00Z"));
         assert!(!view.five_hour.present && !view.weekly.present && !view.gemini.present);
+        assert_eq!(view.gemini.window, "");
         assert_eq!(view.plan, "");
     }
 
@@ -412,8 +459,8 @@ mod tests {
 
         let ready = tray_account(&saved("work", None), Some(&sample()), None, 0.05);
         assert_eq!(ready.fuel, TrayFuel::Ready);
-        assert_eq!(ready.five_hour, "12%");
-        assert_eq!(ready.weekly, "100%");
+        assert_eq!(ready.claude, "12%", "the tighter Claude and GPT limit");
+        assert_eq!(ready.gemini, "40%");
         assert!(!ready.active);
 
         let empty = tray_account(&saved("work", None), Some(&sample()), None, 0.2);
@@ -429,7 +476,8 @@ mod tests {
         let unknown = AccountQuota::new("x", now);
         let row = tray_account(&saved("x", None), Some(&unknown), None, 0.05);
         assert_eq!(row.fuel, TrayFuel::Unavailable);
-        assert_eq!(row.five_hour, "—");
+        assert_eq!(row.claude, "—");
+        assert_eq!(row.gemini, "—");
     }
 
     #[test]
@@ -449,7 +497,12 @@ mod tests {
         assert!(!view.loading);
         assert_eq!(view.updated, "10:00");
         assert_eq!(view.email, "work@example.com");
-        let group = view.groups.row_data(0).unwrap();
+        let gemini = view.groups.row_data(0).unwrap();
+        assert_eq!(gemini.name, "Gemini Models", "Google's order");
+        let labels: Vec<_> = gemini.rows.iter().map(|r| r.label.to_string()).collect();
+        assert_eq!(labels, ["5-hour limit", "Weekly limit"]);
+        assert!(gemini.rows.iter().all(|r| r.kind == RowKind::Gemini));
+        let group = view.groups.row_data(1).unwrap();
         assert_eq!(group.name, "Claude and GPT");
         let labels: Vec<_> = group.rows.iter().map(|r| r.label.to_string()).collect();
         assert_eq!(labels, ["5-hour limit", "Weekly limit", "Daily", "odd"]);

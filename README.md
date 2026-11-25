@@ -96,9 +96,12 @@ Settings, Quit, and delete the folder and the shortcuts.
 
 ## Every account's fuel, at a glance
 
-Each saved account is a card with an **orbit gauge**: the outer orbit is the weekly limit, the
-middle one the 5-hour limit, the inner one the lowest of the recommended Gemini models. Beside it
-are the same three as percentages, each with the time left until it resets. A limit under 20%
+Google gives every account two groups of limits, the same ones Antigravity shows in its settings:
+**Gemini** models, and **Claude and GPT** models, each with a 5-hour and a weekly limit. Each saved
+account is a card with an **orbit gauge**: the outer orbit is the Claude and GPT weekly limit, the
+middle one their 5-hour limit, the inner one Gemini's 5-hour or weekly limit, whichever has less
+left. Beside it are the same three as percentages, each with the time left until it resets; the
+details drawer has all four limits and every model. A limit under 20%
 turns red; a full one drops its countdown. The green ACTIVE tag goes to the account Antigravity is
 signed in with right now, matched by the email in Antigravity's own credential rather than by
 whatever the switcher did last. Every account's quota and plan are read once a minute, with the
@@ -173,8 +176,8 @@ Shortcuts point at the installed copy when there is one.
 ## It lives in the tray
 
 Closing the window (its × button, Alt+F4, or the taskbar) keeps the app running in the tray, and
-the first time a notice says so. The tray menu lists every account with its 5-hour and weekly
-quota, the active one marked with a dot; picking one is the same as its card's Switch button, and
+the first time a notice says so. The tray menu lists every account with what is left of Claude and
+GPT and of Gemini (each group's tighter limit), the active one marked with a dot; picking one is the same as its card's Switch button, and
 the window opens only if a question has to be asked. A new version, the GitHub page, Settings and
 Quit are there too. The icon's tooltip carries the active account's numbers; a left click opens
 the window. **Only one copy runs per Windows user**: opening the app again brings the running
@@ -188,11 +191,13 @@ ending and takes over instead of starting beside it.
 
 ## It switches for you, but never from 2% to 1%
 
-After every complete reading, the switcher looks at the account in use. If its 5-hour or weekly
-limit is at or below the threshold (5% by default), it moves to the account with the most left,
-judged by the tighter of that account's two limits, with more weekly quota breaking a tie. Any
-account at or below the threshold counts as empty, so an almost-empty account is never a target,
-and neither is one whose quota failed or is still loading. With Antigravity open, a notice in the
+After every complete reading, the switcher looks at the account in use. If a 5-hour or weekly
+limit of one of its groups is at or below the threshold (5% by default), it moves to the account
+with the most left **in that group**: a group only runs down while its models are used, so the
+group that ran out is the one you need. Most left means the tighter of that group's two limits,
+then the most of everything else, then more weekly quota. An account at or below the threshold in
+that group counts as empty, so an almost-empty account is never a target, and neither is one whose
+quota failed or is still loading. With Antigravity open, a notice in the
 corner counts down first:
 
 <div align="center">
@@ -276,13 +281,13 @@ The first start has nothing to show, and says what to do next:
 
 | | |
 |---|---|
-| **Accounts** | A card per account with an orbit gauge (weekly · 5-hour · lowest recommended Gemini model) · percent and reset countdown per limit · red under 20% · ACTIVE by the email Antigravity is signed in with · plan from Google · problems in words on the card · a grid that reflows with the window, narrow cards shortening their button and plan tag · double-click a card to switch |
+| **Accounts** | A card per account with an orbit gauge (Claude and GPT weekly · Claude and GPT 5-hour · Gemini's tighter limit) · percent and reset countdown per limit · red under 20% · ACTIVE by the email Antigravity is signed in with · plan from Google · problems in words on the card · a grid that reflows with the window, narrow cards shortening their button and plan tag · double-click a card to switch |
 | **Quota** | Every account once a minute, window open or in the tray · Refresh on demand · every limit group and every model in a details drawer, in Antigravity's order · countdowns and local reset times · access tokens kept in memory and renewed 2 minutes early · Antigravity's own sign-in client found in its install, cached encrypted, looked for again while missing · the Windows proxy settings, including PAC scripts and automatic detection |
 | **Switching** | One click, or a double-click on the card · asks before closing an open Antigravity · close request, then ending its processes, 8 s each · the credential copied whole, never edited · the active account just starts Antigravity · nothing blocks the window |
 | **Adding** | Guided: name → close Antigravity → sign in → save · the new sign-in noticed every 2 s, with its email · the saved copy read back · desktop shortcut created · Cancel, a failure or Quit restores the previous sign-in |
 | **Shortcuts** | `Antigravity - <name>.lnk` per account, with Antigravity's icon · `--launch <name>` window that asks, switches and reports · aimed at the installed copy when there is one · removed with the account, and by the uninstaller |
-| **Tray** | Closing keeps it running · every account's 5-hour and weekly quota in the menu · pick an account to switch · Update to a new version · automatic switching and Start with Windows as check items · Settings, the GitHub page and Quit · the active account's quota in the tooltip · one running copy per Windows user: opening it again restores that copy's window, and a copy stuck while closing is taken over, never doubled |
-| **Automatic switching** | Threshold 1–50% (5%) on the 5-hour and weekly limits · the most-left account as target, unknown quota never one · countdown notice 0–600 s (60 s) with Switch now and Not now · a quiet sign-in change when Antigravity is closed · one notice with the earliest refill when every account is empty · waits for a fresh reading after each switch |
+| **Tray** | Closing keeps it running · every account's Claude and GPT and Gemini quota in the menu · pick an account to switch · Update to a new version · automatic switching and Start with Windows as check items · Settings, the GitHub page and Quit · the active account's quota in the tooltip · one running copy per Windows user: opening it again restores that copy's window, and a copy stuck while closing is taken over, never doubled |
+| **Automatic switching** | Threshold 1–50% (5%) on the 5-hour and weekly limits of both groups · the account with the most left in the group that ran out as target, unknown quota never one · countdown notice 0–600 s (60 s) with Switch now and Not now · a quiet sign-in change when Antigravity is closed · one notice with the earliest refill when every account is empty · waits for a fresh reading after each switch |
 | **Updates** | A check 5 s after start and every 60 s, from GitHub's download network, through the Windows proxy · Update in the header, the tray and About · one corner notice per version while the window is hidden · progress and Cancel · HTTPS from this repository only, size, SHA-256 and a `--version` answer checked before anything is replaced · the running file renamed aside, never overwritten, put back if the swap fails · restart on the new version with a note · old files cleaned on the next start · waits while an account is being added or a switch runs · prereleases and older versions never offered · automatic checks can be turned off |
 | **Install** | A per-user installer (no administrator rights, Start menu, desktop, optional Start with Windows, Installed apps) · an uninstall window of the app's own: what goes and what stays, with switches to also delete the saved accounts and the settings, both off by default · scripted `/VERYSILENT [/DELETEACCOUNTS] [/DELETESETTINGS]` · or a portable executable · Install on this PC from the portable copy · both update themselves, and an installed copy refreshes its installation after each update |
 | **Privacy and safety** | Sign-ins only in Windows Credential Manager · only Google's token and quota endpoints and this repository's releases contacted · a log that never holds a token · no administrator rights · removing an account never touches projects or conversations |
@@ -312,9 +317,11 @@ The first start has nothing to show, and says what to do next:
 **Network.** A saved refresh token is exchanged at `oauth2.googleapis.com` for an access token,
 using the installed-app sign-in client that ships inside Antigravity: the switcher finds it by
 scanning Antigravity's language server and caches it, because Google issues it to Antigravity, not
-to this tool. Quota comes from `cloudcode-pa.googleapis.com` (`loadCodeAssist`,
-`retrieveUserQuotaSummary`, `fetchAvailableModels`); each request may take 25 seconds, and a
-refused access token is renewed and retried once. Updates come from
+to this tool. Quota comes from `daily-cloudcode-pa.googleapis.com`, the server Antigravity itself
+uses (`loadCodeAssist`, `retrieveUserQuotaSummary`, `fetchAvailableModels`). The requests name the
+installed Antigravity's version, `antigravity/2.35.1 windows/amd64`, followed by
+`antigravity-account-switcher/<version>`: Google sends the Gemini group only to recent Antigravity
+versions. Each request may take 25 seconds, and a refused access token is renewed and retried once. Updates come from
 `github.com/DrSaeedHub/pro-antigravity-manager/releases` (and the GitHub download host it redirects
 to), over HTTPS only. Everything goes through the Windows proxy settings: the manual proxy and its
 bypass list, a PAC script, or automatic detection, remembered per host for 5 minutes. Nothing else

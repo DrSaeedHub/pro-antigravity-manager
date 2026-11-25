@@ -19,7 +19,8 @@ pub struct QuotaBucket {
     pub reset: Option<Timestamp>,
 }
 
-/// A group of limits (for example "Claude and GPT models").
+/// A group of limits that its models share: Google sends "Gemini Models" and "Claude and GPT
+/// models", each with a 5-hour and a weekly limit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuotaGroup {
     /// `displayName`.
@@ -28,6 +29,44 @@ pub struct QuotaGroup {
     pub description: String,
     /// Shortest window first.
     pub buckets: Vec<QuotaBucket>,
+}
+
+impl QuotaGroup {
+    /// Whether this is the Gemini models' group: Google names it "Gemini Models" and its limits
+    /// `gemini-5h` and `gemini-weekly`. Every other group (today "Claude and GPT models") is not.
+    #[must_use]
+    pub fn is_gemini(&self) -> bool {
+        self.name.to_ascii_lowercase().contains("gemini")
+            || self
+                .buckets
+                .iter()
+                .any(|bucket| bucket.id.to_ascii_lowercase().starts_with("gemini"))
+    }
+
+    /// The first bucket whose window is `window` (case-insensitive).
+    #[must_use]
+    pub fn bucket(&self, window: &str) -> Option<&QuotaBucket> {
+        self.buckets.iter().find(|bucket| bucket.window.eq_ignore_ascii_case(window))
+    }
+
+    /// Of the 5-hour and the weekly limit, the one with less left.
+    #[must_use]
+    pub fn tightest(&self) -> Option<&QuotaBucket> {
+        tighter(self.bucket("5h"), self.bucket("weekly"))
+    }
+}
+
+/// The limit with less left (`first` on ties), or whichever one is known.
+#[must_use]
+pub fn tighter<'a>(
+    first: Option<&'a QuotaBucket>,
+    second: Option<&'a QuotaBucket>,
+) -> Option<&'a QuotaBucket> {
+    match (first, second) {
+        (Some(a), Some(b)) if b.fraction < a.fraction => Some(b),
+        (Some(a), _) => Some(a),
+        (None, b) => b,
+    }
 }
 
 /// One model's remaining quota.
@@ -84,13 +123,33 @@ impl AccountQuota {
         }
     }
 
-    /// The first bucket whose window is `window` (case-insensitive).
+    /// The Claude and GPT limit for `window` (case-insensitive): the first bucket with that
+    /// window in a group that is not the Gemini one.
     #[must_use]
     pub fn bucket(&self, window: &str) -> Option<&QuotaBucket> {
-        self.groups
-            .iter()
-            .flat_map(|group| &group.buckets)
-            .find(|bucket| bucket.window.eq_ignore_ascii_case(window))
+        self.groups.iter().filter(|group| !group.is_gemini()).find_map(|group| group.bucket(window))
+    }
+
+    /// The Gemini models' group, when Google sent one.
+    #[must_use]
+    pub fn gemini_group(&self) -> Option<&QuotaGroup> {
+        self.groups.iter().find(|group| group.is_gemini())
+    }
+
+    /// What is left for Gemini: the tighter of the Gemini group's 5-hour and weekly limits, or,
+    /// without that group, the recommended Gemini model with the least left (its window empty).
+    #[must_use]
+    pub fn gemini(&self) -> Option<QuotaBucket> {
+        if let Some(limit) = self.gemini_group().and_then(QuotaGroup::tightest) {
+            return Some(limit.clone());
+        }
+        self.lowest_gemini().map(|model| QuotaBucket {
+            id: model.id.clone(),
+            name: model.display_name.clone(),
+            window: String::new(),
+            fraction: model.fraction,
+            reset: model.reset,
+        })
     }
 
     /// Among the recommended Gemini models, the one with the least left (the first on ties).
@@ -131,6 +190,69 @@ mod tests {
             recommended,
             sort_index: 0,
         }
+    }
+
+    fn group(name: &str, buckets: Vec<QuotaBucket>) -> QuotaGroup {
+        QuotaGroup { name: name.into(), description: String::new(), buckets }
+    }
+
+    fn gemini_bucket(window: &str, fraction: f64) -> QuotaBucket {
+        QuotaBucket { id: format!("gemini-{window}"), ..bucket(window, fraction) }
+    }
+
+    #[test]
+    fn the_gemini_group_is_known_by_its_name_or_its_limits() {
+        assert!(group("Gemini Models", vec![]).is_gemini());
+        assert!(group("Other", vec![gemini_bucket("5h", 1.0)]).is_gemini());
+        assert!(!group("Claude and GPT models", vec![bucket("5h", 1.0)]).is_gemini());
+    }
+
+    #[test]
+    fn the_tighter_limit_has_less_left() {
+        let (five, weekly) = (bucket("5h", 0.8), bucket("weekly", 0.95));
+        assert_eq!(tighter(Some(&five), Some(&weekly)), Some(&five));
+        assert_eq!(tighter(Some(&weekly), Some(&five)), Some(&five));
+        assert_eq!(
+            tighter(Some(&five), Some(&bucket("weekly", 0.8))),
+            Some(&five),
+            "first on ties"
+        );
+        assert_eq!(tighter(None, Some(&weekly)), Some(&weekly));
+        assert_eq!(tighter(Some(&weekly), None), Some(&weekly));
+        assert_eq!(tighter(None, None), None);
+        let both = group("g", vec![bucket("5h", 0.9), bucket("weekly", 0.3), bucket("daily", 0.1)]);
+        assert_eq!(both.tightest().unwrap().window, "weekly", "only 5-hour and weekly count");
+        assert!(group("g", vec![bucket("daily", 0.1)]).tightest().is_none());
+    }
+
+    #[test]
+    fn claude_limits_never_come_from_the_gemini_group() {
+        let mut quota = AccountQuota::new("a", Timestamp::UNIX_EPOCH);
+        quota.groups.push(group(
+            "Gemini Models",
+            vec![gemini_bucket("5h", 0.81), gemini_bucket("weekly", 0.94)],
+        ));
+        assert!(quota.bucket("5h").is_none());
+        quota
+            .groups
+            .push(group("Claude and GPT models", vec![bucket("5h", 1.0), bucket("weekly", 0.5)]));
+        assert_eq!(quota.bucket("5h").unwrap().fraction, 1.0);
+        assert_eq!(quota.bucket("weekly").unwrap().fraction, 0.5);
+        assert_eq!(quota.gemini_group().unwrap().name, "Gemini Models");
+        let gemini = quota.gemini().unwrap();
+        assert_eq!((gemini.window.as_str(), gemini.fraction), ("5h", 0.81));
+    }
+
+    #[test]
+    fn without_a_gemini_group_the_lowest_gemini_model_stands_in() {
+        let mut quota = AccountQuota::new("a", Timestamp::UNIX_EPOCH);
+        assert!(quota.gemini().is_none());
+        quota.models = vec![model("gemini-3", 0.7, true), model("gemini-flash", 0.4, true)];
+        let gemini = quota.gemini().unwrap();
+        assert_eq!(
+            (gemini.id.as_str(), gemini.window.as_str(), gemini.fraction),
+            ("gemini-flash", "", 0.4)
+        );
     }
 
     #[test]

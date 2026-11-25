@@ -14,6 +14,8 @@ export struct Gauge {
     percent: string,
     resets: string,
     low: bool,
+    // "5h", "weekly", or empty when the value is a single model's.
+    window: string,
 }
 
 export struct AccountView {
@@ -155,9 +157,15 @@ export component AccountCard inherits Rectangle {
 
                 if root.account.state == CardState.ready: VerticalLayout {
                     spacing: 6px;
-                    Reading { label: @tr("5-hour limit"); tint: Theme.solar; gauge: root.account.five-hour; }
-                    Reading { label: @tr("Weekly limit"); tint: Theme.ion; gauge: root.account.weekly; }
-                    Reading { label: @tr("Gemini"); tint: Theme.nebula; gauge: root.account.gemini; }
+                    Reading { label: @tr("Claude & GPT · 5-hour"); tint: Theme.solar; gauge: root.account.five-hour; }
+                    Reading { label: @tr("Claude & GPT · weekly"); tint: Theme.ion; gauge: root.account.weekly; }
+                    Reading {
+                        label: root.account.gemini.window == "5h" ? @tr("Gemini · 5-hour")
+                            : root.account.gemini.window == "weekly" ? @tr("Gemini · weekly")
+                            : @tr("Gemini");
+                        tint: Theme.nebula;
+                        gauge: root.account.gemini;
+                    }
                 }
                 if root.account.state == CardState.loading: Text {
                     text: @tr("Reading quota…");

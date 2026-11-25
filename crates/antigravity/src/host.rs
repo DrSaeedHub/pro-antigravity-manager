@@ -93,6 +93,21 @@ impl Antigravity {
         install::locate(self.folders.as_ref())
     }
 
+    /// The installed Antigravity's version ("2.35.1"), from its executable.
+    #[must_use]
+    pub fn version(&self) -> Option<String> {
+        let exe = self.executable()?;
+        #[cfg(windows)]
+        {
+            crate::windows::file_version(&exe)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = exe;
+            None
+        }
+    }
+
     /// Whether any Antigravity process runs.
     #[must_use]
     pub fn is_running(&self) -> bool {
@@ -223,8 +238,10 @@ mod tests {
         let antigravity = service(&host, root.path());
         assert_eq!(antigravity.launch().unwrap_err(), AntigravityError::NotInstalled);
 
+        assert_eq!(antigravity.version(), None, "nothing installed");
         let exe = install(root.path());
         assert_eq!(antigravity.executable(), Some(exe.clone()));
+        assert_eq!(antigravity.version(), None, "an executable without a version resource");
         antigravity.launch().unwrap();
         assert_eq!(host.started(), vec![exe]);
         assert!(antigravity.is_running());

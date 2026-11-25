@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.2
+
+- Quota matches what Antigravity shows. Google now has two groups of limits, Gemini models and
+  Claude and GPT models, each with a 5-hour and a weekly limit, and it sends the Gemini group only
+  to recent Antigravity versions on Antigravity's own server. The app now reads that server
+  (`daily-cloudcode-pa`) and names the installed Antigravity's version in its requests. Before, it
+  asked the other server, which reports every limit as full, so cards could say 100% while
+  Antigravity said 95%.
+- Cards show Claude and GPT's 5-hour and weekly limits and Gemini's tighter limit (labelled
+  5-hour or weekly). The details drawer lists both groups with both limits, Gemini first as in
+  Antigravity, and every model. The tray menu shows each account's Claude and GPT and Gemini
+  quota.
+- Automatic switching looks at both groups: when one runs out on the account in use, the app moves
+  to the account with the most left in that group, so an account with plenty of Gemini but no
+  Claude quota is not picked when Claude is what ran out.
+- The window's Minimize button works every time. Before, it only worked once: after the window was
+  restored from the taskbar, the button did nothing.
+
 ## 1.2.1
 
 - Uninstalling opens the app's own window instead of Windows' bare "Are you sure" box. It says

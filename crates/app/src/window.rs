@@ -40,6 +40,12 @@ pub fn show_problem(code: &str, detail: &str) {
     let _ = window.run();
 }
 
+/// Minimizes `window` to the taskbar, however often it was minimized and restored before.
+pub fn minimize(window: &slint::Window) {
+    use slint::winit_030::WinitWindowAccessor;
+    window.with_winit_window(|winit_window| winit_window.set_minimized(true));
+}
+
 /// Brings `window` to the front, restored if it was minimized.
 pub fn bring_to_front(window: &slint::Window) {
     use slint::winit_030::WinitWindowAccessor;

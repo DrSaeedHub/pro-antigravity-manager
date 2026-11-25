@@ -3,19 +3,20 @@
 
 export enum TrayFuel { reading, unavailable, ready, empty }
 
+// `claude` and `gemini`: what is left of each group, the tighter of its 5-hour and weekly limits.
 export struct TrayAccount {
     name: string,
     active: bool,
     fuel: TrayFuel,
-    five-hour: string,
-    weekly: string,
+    claude: string,
+    gemini: string,
 }
 
 export component Tray inherits SystemTrayIcon {
     in property <[TrayAccount]> accounts;
     in property <string> active-name;
-    in property <string> active-five-hour;
-    in property <string> active-weekly;
+    in property <string> active-claude;
+    in property <string> active-gemini;
     in-out property <bool> auto-switch;
     in-out property <bool> start-with-windows;
     in property <string> update-version;
@@ -30,8 +31,8 @@ export component Tray inherits SystemTrayIcon {
 
     icon: @image-url("../assets/tray-32.png");
     tooltip: root.active-name == "" ? @tr("Antigravity Account Switcher")
-        : root.active-five-hour == "" ? @tr("Antigravity Account Switcher · {}", root.active-name)
-        : @tr("Antigravity Account Switcher · {} · 5h {} · weekly {}", root.active-name, root.active-five-hour, root.active-weekly);
+        : root.active-claude == "" ? @tr("Antigravity Account Switcher · {}", root.active-name)
+        : @tr("Antigravity Account Switcher · {} · Claude and GPT {} · Gemini {}", root.active-name, root.active-claude, root.active-gemini);
     clicked => { root.open(); }
 
     Menu {
@@ -48,8 +49,8 @@ export component Tray inherits SystemTrayIcon {
             title: (account.active ? "●  " : "     ") + (
                 account.fuel == TrayFuel.reading ? @tr("{} — reading quota…", account.name)
                 : account.fuel == TrayFuel.unavailable ? @tr("{} — quota unavailable", account.name)
-                : account.fuel == TrayFuel.empty ? @tr("{} — out of quota (5h {} · weekly {})", account.name, account.five-hour, account.weekly)
-                : @tr("{} — 5h {} · weekly {}", account.name, account.five-hour, account.weekly));
+                : account.fuel == TrayFuel.empty ? @tr("{} — out of quota (Claude and GPT {} · Gemini {})", account.name, account.claude, account.gemini)
+                : @tr("{} — Claude and GPT {} · Gemini {}", account.name, account.claude, account.gemini));
             activated => { root.pick(account.name); }
         }
         if root.accounts.length == 0: MenuItem {

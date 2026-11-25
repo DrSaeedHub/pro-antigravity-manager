@@ -1,4 +1,5 @@
-//! The real process host: Toolhelp snapshots, `WM_CLOSE` to main windows, `TerminateProcess`.
+//! The real process host: Toolhelp snapshots, `WM_CLOSE` to main windows, `TerminateProcess`;
+//! and the version an executable carries.
 #![allow(unsafe_code, reason = "Win32 calls")]
 
 use std::collections::HashSet;
@@ -17,6 +18,44 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 
 use crate::host::{AntigravityError, AppHost};
+
+/// The product version an executable or library carries in its version resource, as
+/// `major.minor.patch` (Antigravity 2.35.1 says "2.35.1"). `None` when it has none.
+#[must_use]
+pub fn file_version(path: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
+    };
+    use windows::core::{PCWSTR, w};
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let name = PCWSTR(wide.as_ptr());
+    // SAFETY: `name` is a NUL-terminated path that lives through the calls; `data` is as large as
+    // Windows asked for, and the pointer VerQueryValueW gives back points into `data`, which is
+    // still alive while it is read.
+    unsafe {
+        let size = GetFileVersionInfoSizeW(name, None);
+        if size == 0 {
+            return None;
+        }
+        let mut data = vec![0_u8; usize::try_from(size).ok()?];
+        GetFileVersionInfoW(name, None, size, data.as_mut_ptr().cast()).ok()?;
+        let mut fixed: *mut core::ffi::c_void = std::ptr::null_mut();
+        let mut length = 0_u32;
+        let found = VerQueryValueW(data.as_ptr().cast(), w!("\\"), &raw mut fixed, &raw mut length);
+        if !found.as_bool()
+            || fixed.is_null()
+            || usize::try_from(length).ok()? < size_of::<VS_FIXEDFILEINFO>()
+        {
+            return None;
+        }
+        let info = fixed.cast::<VS_FIXEDFILEINFO>().read_unaligned();
+        let (high, low) = (info.dwProductVersionMS, info.dwProductVersionLS);
+        Some(format!("{}.{}.{}", high >> 16, high & 0xFFFF, low >> 16))
+    }
+}
 
 /// Processes whose executable is `<name>.exe` (case-insensitive), like `Antigravity.exe`.
 #[derive(Debug, Clone)]
@@ -122,5 +161,28 @@ impl AppHost for WindowsHost {
             command.current_dir(folder);
         }
         command.spawn().map(drop).map_err(|error| AntigravityError::StartFailed(error.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_version_windows_files_carry() {
+        // Windows itself always carries a version (and GitHub's runners keep it in C:\Windows too).
+        let version = file_version(Path::new(r"C:\Windows\System32\kernel32.dll")).unwrap();
+        let parts: Vec<u32> = version.split('.').map(|part| part.parse().unwrap()).collect();
+        assert_eq!(parts.len(), 3, "{version}");
+        assert!(parts[0] >= 6, "{version}");
+    }
+
+    #[test]
+    fn a_file_without_a_version_has_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("Antigravity.exe");
+        std::fs::write(&plain, b"not a program").unwrap();
+        assert_eq!(file_version(&plain), None);
+        assert_eq!(file_version(&dir.path().join("missing.exe")), None);
     }
 }

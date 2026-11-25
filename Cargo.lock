@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "accounts"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "antigravity",
  "desktop",
@@ -227,7 +227,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "antigravity"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "kernel",
  "tempfile",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "app"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "accounts",
  "antigravity",
@@ -1161,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "antigravity",
  "kernel",
@@ -2809,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "kernel"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "jiff",
  "serde_json",
@@ -3212,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "net"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "reqwest",
  "tokio",
@@ -4074,7 +4074,7 @@ dependencies = [
 
 [[package]]
 name = "quota"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "antigravity",
  "jiff",
@@ -5524,7 +5524,7 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
 name = "update"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "net",
  "reqwest",
@@ -5607,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "vault"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "jiff",
  "kernel",
@@ -6560,7 +6560,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "jiff",
  "serde_json",

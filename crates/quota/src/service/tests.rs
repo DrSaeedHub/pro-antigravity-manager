@@ -106,6 +106,7 @@ impl Rig {
             .and(path(format!("/v1internal:{name}")))
             .and(header("authorization", format!("Bearer {bearer}")))
             .and(header("content-type", "application/json"))
+            .and(header("user-agent", client_name(ANTIGRAVITY_VERSION)))
             .respond_with(ResponseTemplate::new(status).set_body_json(body))
             .mount(&self.server)
             .await;
@@ -126,8 +127,12 @@ impl Rig {
         Mock::given(method("POST"))
             .and(path("/v1internal:retrieveUserQuotaSummary"))
             .and(body_string(r#"{"project":"proj-1"}"#))
+            .and(header("user-agent", client_name(ANTIGRAVITY_VERSION)))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "groups": [{ "displayName": "Claude and GPT", "buckets": [
+                "groups": [{ "displayName": "Gemini Models", "buckets": [
+                    { "bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.97 },
+                    { "bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.95 },
+                ]}, { "displayName": "Claude and GPT", "buckets": [
                     { "bucketId": "w", "window": "weekly", "remainingFraction": 0.41 },
                     { "bucketId": "f", "window": "5h", "remainingFraction": 0.82,
                       "resetTime": "2026-11-23T12:15:00Z" },
@@ -174,6 +179,8 @@ async fn reads_everything_with_a_cached_client() {
     assert_eq!(quota.bucket("5h").unwrap().fraction, 0.82);
     assert_eq!(quota.bucket("weekly").unwrap().fraction, 0.41);
     assert_eq!(quota.lowest_gemini().unwrap().fraction, 0.55);
+    let gemini = quota.gemini().unwrap();
+    assert_eq!((gemini.window.as_str(), gemini.fraction), ("5h", 0.95), "the Gemini group wins");
 }
 
 #[tokio::test]
@@ -466,10 +473,13 @@ async fn requests_go_through_the_chosen_proxy() {
 fn defaults_match_the_real_service() {
     let settings = QuotaSettings::default();
     assert_eq!(settings.token_url, "https://oauth2.googleapis.com/token");
-    assert_eq!(settings.api_base, "https://cloudcode-pa.googleapis.com/v1internal:");
+    assert_eq!(settings.api_base, "https://daily-cloudcode-pa.googleapis.com/v1internal:");
     assert_eq!(
         settings.user_agent,
-        format!("antigravity-account-switcher/{}", env!("CARGO_PKG_VERSION"))
+        format!(
+            "antigravity/2.35.1 windows/amd64 antigravity-account-switcher/{}",
+            env!("CARGO_PKG_VERSION")
+        )
     );
     assert_eq!(settings.timeout, Duration::from_secs(25));
     assert_eq!(settings.token_margin, SignedDuration::from_mins(2));
@@ -487,4 +497,24 @@ fn forms_encode_like_uri_escape_data_string() {
 #[test]
 fn later_saturates() {
     assert_eq!(later(Timestamp::MAX, SignedDuration::from_secs(1)), Timestamp::MAX);
+}
+
+#[test]
+fn the_client_name_follows_a_newer_installed_antigravity() {
+    let name = |installed: Option<&str>| {
+        let agent = QuotaSettings::default().for_antigravity(installed).user_agent;
+        agent.split(' ').next().unwrap().to_owned()
+    };
+    assert_eq!(name(Some("2.40.0")), "antigravity/2.40.0");
+    assert_eq!(name(Some(" 3.0.1 ")), "antigravity/3.0.1");
+    assert_eq!(name(Some("2.35.1")), "antigravity/2.35.1");
+    assert_eq!(name(Some("2.35.0")), "antigravity/2.35.1", "older: the known version");
+    assert_eq!(name(Some("1.99.9")), "antigravity/2.35.1");
+    assert_eq!(name(Some("2.x")), "antigravity/2.35.1", "not a version");
+    assert_eq!(name(Some("")), "antigravity/2.35.1");
+    assert_eq!(name(None), "antigravity/2.35.1");
+    assert!(
+        client_name("9.9.9")
+            .ends_with(&format!(" antigravity-account-switcher/{}", env!("CARGO_PKG_VERSION")))
+    );
 }

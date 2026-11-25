@@ -1,6 +1,8 @@
 """A pretend Google for the demo: the OAuth token endpoint and the three Cloud Code calls the
 quota service makes (loadCodeAssist, retrieveUserQuotaSummary, fetchAvailableModels), answering
-from accounts.json in the shapes the app parses (crates/quota/src/parse.rs). It also plays the
+from accounts.json in the shapes the app parses (crates/quota/src/parse.rs): the quota summary has
+the "Gemini Models" group (its weekly limit from `gemini_weekly`, its 5-hour one the tightest
+Gemini model) and the Claude and GPT group (`five_hour`, `weekly`). It also plays the
 project's GitHub releases under /gh/owner/repo: latest.json when a session sets `release`, and a
 4 MiB pretend package sent slowly, so the update sheet can be seen mid-download.
 
@@ -158,15 +160,24 @@ class PretendGoogle:
                 answer["paidTier"] = {"id": "g1-pro-tier", "name": plan}
             return 200, answer
         if method == "retrieveUserQuotaSummary":
+            # Like Google: the Gemini group first, its 5-hour limit the tightest Gemini model.
+            gemini_five_hour = min(account["gemini"].values(), key=lambda limit: limit[0], default=[1.0, None])
             return 200, {
                 "groups": [
                     {
+                        "displayName": "Gemini Models",
+                        "buckets": [
+                            self._bucket("gemini-weekly", "Weekly Limit Remaining", "weekly", account.get("gemini_weekly", [1.0, None])),
+                            self._bucket("gemini-5h", "Five Hour Limit Remaining", "5h", gemini_five_hour),
+                        ],
+                    },
+                    {
                         "displayName": self.data["limits_group"],
                         "buckets": [
-                            self._bucket("five-hour", "5 hours", "5h", account["five_hour"]),
-                            self._bucket("weekly", "Weekly", "weekly", account["weekly"]),
+                            self._bucket("3p-weekly", "Weekly Limit Remaining", "weekly", account["weekly"]),
+                            self._bucket("3p-5h", "Five Hour Limit Remaining", "5h", account["five_hour"]),
                         ],
-                    }
+                    },
                 ]
             }
         if method == "fetchAvailableModels":

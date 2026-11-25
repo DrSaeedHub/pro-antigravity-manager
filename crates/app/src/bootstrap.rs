@@ -82,12 +82,16 @@ pub fn build(parts: Parts) -> Result<Services, BootError> {
         parts.current_exe,
         DesktopSettings::default(),
     );
+    // Google shapes the quota answer by the Antigravity version the calls name.
+    let installed = antigravity.version();
+    tracing::info!(version = installed.as_deref().unwrap_or("unknown"), "Antigravity version");
+    let quota_settings = parts.quota_settings.for_antigravity(installed.as_deref());
     let cache = ClientCache::new(
         desktop.data_dir()?.join("oauth-client.bin"),
         parts.secret_box,
-        &parts.quota_settings.cache_entropy,
+        &quota_settings.cache_entropy,
     );
-    let http = parts.quota_settings.http_client(parts.proxy.clone())?;
+    let http = quota_settings.http_client(parts.proxy.clone())?;
     let updater = Updater::new(parts.update_settings, parts.proxy, parts.probe)?;
     let accounts = Accounts::new(
         parts.store.clone(),
@@ -101,7 +105,7 @@ pub fn build(parts: Parts) -> Result<Services, BootError> {
         antigravity,
         cache,
         parts.clock.clone(),
-        parts.quota_settings,
+        quota_settings,
     );
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

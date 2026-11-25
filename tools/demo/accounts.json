@@ -1,5 +1,5 @@
 {
-  "comment": "Demonstration accounts for tools/demo. Fractions are what is left (1 = full); resets are counted from `now`. Phases override accounts for the sessions that need it.",
+  "comment": "Demonstration accounts for tools/demo. Fractions are what is left (1 = full); resets are counted from `now`. five_hour and weekly are the Claude and GPT group; gemini_weekly is the Gemini group's weekly limit (its 5-hour one is the tightest Gemini model). Phases override accounts for the sessions that need it.",
   "now": "2026-11-24T14:32:00Z",
   "limits_group": "Claude and GPT models",
   "models": [
@@ -15,17 +15,20 @@
     {
       "name": "dev", "email": "nora.dev@example.com", "plan": "Google AI Pro",
       "five_hour": [0.64, "2h 15m"], "weekly": [0.41, "3d 4h"],
-      "gemini": {"gemini-3-pro-high": [0.92, "3h 5m"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [0.97, "1h 40m"]}
+      "gemini": {"gemini-3-pro-high": [0.92, "3h 5m"], "gemini-3-pro-low": [1.0, "5h"], "gemini-3-flash": [0.97, "1h 40m"]},
+      "gemini_weekly": [0.96, "6d 4h"]
     },
     {
       "name": "personal", "email": "nora@example.com", "plan": "Free",
       "five_hour": [0.88, "4h 2m"], "weekly": [0.73, "5d 2h"],
-      "gemini": {"gemini-3-pro-high": [0.55, "6h 10m"], "gemini-3-pro-low": [0.81, "6h 10m"], "gemini-3-flash": [1.0, "5h"]}
+      "gemini": {"gemini-3-pro-high": [0.55, "6h 10m"], "gemini-3-pro-low": [0.81, "6h 10m"], "gemini-3-flash": [1.0, "5h"]},
+      "gemini_weekly": [0.6, "4d 1h"]
     },
     {
       "name": "research", "email": "nora.research@example.org", "plan": "Google AI Pro",
       "five_hour": [0.12, "48m"], "weekly": [0.55, "2d 19h"],
-      "gemini": {"gemini-3-pro-high": [0.34, "1h 55m"], "gemini-3-pro-low": [0.7, "1h 55m"], "gemini-3-flash": [0.9, "1h 55m"]}
+      "gemini": {"gemini-3-pro-high": [0.34, "1h 55m"], "gemini-3-pro-low": [0.7, "1h 55m"], "gemini-3-flash": [0.9, "1h 55m"]},
+      "gemini_weekly": [0.82, "5d 7h"]
     },
     {
       "name": "studio", "email": "studio@example.net", "plan": "Google AI Ultra",
