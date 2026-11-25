@@ -51,6 +51,17 @@ fn root() -> PathBuf {
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
 }
 
+/// Where Cargo writes builds: `CARGO_TARGET_DIR` when set, else `target` in the repository.
+fn target_dir() -> PathBuf {
+    let dir = match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(dir) if dir.is_absolute() => dir,
+        Some(dir) => root().join(dir),
+        None => root().join("target"),
+    };
+    // `C:/x` from a POSIX shell becomes `C:\x`: PowerShell's Compress-Archive refuses mixed slashes.
+    std::path::absolute(&dir).unwrap_or(dir)
+}
+
 fn run(title: &str, program: &str, args: &[&str]) -> Result<(), String> {
     println!("\n== {title}");
     let status = Command::new(program)
@@ -174,7 +185,11 @@ fn dist(args: &[String]) -> Result<(), String> {
     fs::create_dir_all(&out).map_err(|error| format!("dist folder: {error}"))?;
     let names = release::Names::new(version);
 
-    let exe = root.join("target").join("release").join(release::EXECUTABLE);
+    let built = target_dir().join("release");
+    let exe = built.join(release::EXECUTABLE);
+    if !exe.is_file() {
+        return Err(format!("the release build is not at {}", exe.display()));
+    }
     let zip = out.join(&names.portable);
     let script = format!(
         "$ErrorActionPreference='Stop'; Compress-Archive -Force -LiteralPath '{}','{}','{}' -DestinationPath '{}'",
@@ -198,6 +213,7 @@ fn dist(args: &[String]) -> Result<(), String> {
             format!("/DSourceDir={}", root.display()),
             format!("/DOutputDir={}", out.display()),
             format!("/DRepository={repository}"),
+            format!("/DBuildDir={}", built.display()),
         ];
         let mut arguments: Vec<&str> = vec!["/Qp"];
         arguments.extend(defines.iter().map(String::as_str));

@@ -7,7 +7,8 @@
 ; made; settings, logs and saved accounts (in Windows Credential Manager) stay.
 ;
 ; xtask passes: AppVersion (1.2.0 or 1.3.0-beta.1), NumericVersion (1.2.0), SourceDir (the
-; repository), OutputDir and Repository (the GitHub address from Cargo.toml).
+; repository), BuildDir (where the release build is), OutputDir and Repository (the GitHub
+; address from Cargo.toml).
 
 #ifndef AppVersion
   #error AppVersion is missing: build the installer with cargo xtask dist
@@ -17,6 +18,9 @@
 #endif
 #ifndef SourceDir
   #define SourceDir ".."
+#endif
+#ifndef BuildDir
+  #define BuildDir SourceDir + "\target\release"
 #endif
 #ifndef OutputDir
   #define OutputDir SourceDir + "\dist"
@@ -68,7 +72,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "startup"; Description: "Start with Windows (in the tray)"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\target\release\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
