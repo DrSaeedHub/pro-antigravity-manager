@@ -18,6 +18,8 @@ const RUNNING_COPY: &str = "AntigravityAccountSwitcher";
 const ANSWER_WITHIN: Duration = Duration::from_secs(3);
 /// How long a second start keeps asking a running copy that is alive but does not answer.
 const PATIENCE: Duration = Duration::from_secs(10);
+/// The installer runs without any window and opens the app again when it is done.
+const SETUP_SWITCHES: [&str; 4] = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/RELAUNCH"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -42,8 +44,15 @@ fn main() -> ExitCode {
     }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "started");
 
-    if cli::uninstall_request(&args) {
-        let _ = cli::uninstall(&services);
+    if cli::uninstall_dialog_request(&args) {
+        let answer = app::uninstall::ask(&services).unwrap_or_else(|error| {
+            tracing::error!(%error, "the uninstall window failed");
+            None
+        });
+        return ExitCode::from(app::uninstall::exit_code(answer));
+    }
+    if let Some(scope) = cli::uninstall_request(&args) {
+        let _ = cli::uninstall(&services, scope);
         return ExitCode::SUCCESS;
     }
     if let Some(name) = cli::launch_target(&args) {
@@ -115,6 +124,18 @@ fn finish(
 ) -> ExitCode {
     match outcome {
         Ok(Outcome::Quit) => ExitCode::SUCCESS,
+        Ok(Outcome::RunSetup(setup)) => {
+            if let Some(running) = running {
+                running.release();
+            }
+            match std::process::Command::new(&setup).args(SETUP_SWITCHES).spawn() {
+                Ok(_) => {
+                    tracing::info!(setup = %setup.display(), "the installer finishes the update");
+                }
+                Err(error) => tracing::error!(%error, "the installer did not start"),
+            }
+            ExitCode::SUCCESS
+        }
         Ok(Outcome::Restart(exe)) => {
             if let Some(running) = running {
                 running.release();

@@ -100,11 +100,25 @@ impl Shell for WindowsShell {
 /// Where Windows lists installed apps for the current user.
 const UNINSTALL_KEYS: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
 
+/// What the installer recorded about the copy in a folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetupInstall {
+    /// The version of the installer that last ran there (`None` for installers older than 1.2.1,
+    /// which did not record it).
+    pub installer_version: Option<String>,
+}
+
 /// Sets the version Installed apps shows for the entry whose `InstallLocation` is `folder` (the
 /// installer's entry), after the app updated itself there. False when there is no such entry.
 #[must_use]
 pub fn record_installed_version(folder: &Path, version: &str) -> bool {
     set_display_version(UNINSTALL_KEYS, folder, version)
+}
+
+/// Whether the installer put the copy in `folder` there, and which version of it ran last.
+#[must_use]
+pub fn setup_install(folder: &Path) -> Option<SetupInstall> {
+    setup_install_under(UNINSTALL_KEYS, folder)
 }
 
 fn same_folder(a: &str, b: &Path) -> bool {
@@ -116,20 +130,43 @@ fn wide_value(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-fn set_display_version(root: &str, folder: &Path, version: &str) -> bool {
+/// The text value `name` of the current user's key `key`.
+fn read_text(key: &str, name: &str) -> Option<String> {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW};
+    let mut buffer = [0u16; 1024];
+    let mut size = 2048u32;
+    // SAFETY: the strings outlive the call; the buffer is local and its size in bytes is passed.
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            &HSTRING::from(key),
+            &HSTRING::from(name),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&raw mut size),
+        )
+    }
+    .ok()
+    .ok()?;
+    let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..end]))
+}
+
+/// The full names of the entries under `root` whose `InstallLocation` is `folder`.
+fn entries_for(root: &str, folder: &Path) -> Vec<String> {
     use windows::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, KEY_READ, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW,
-        RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
+        HKEY, HKEY_CURRENT_USER, KEY_READ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
     };
     let mut keys = HKEY::default();
-    // SAFETY: the key handle is closed below; every buffer is local and sized for its call.
+    let mut names = Vec::new();
+    // SAFETY: the key handle is closed below; the name buffer is local and sized for the call.
     unsafe {
         if RegOpenKeyExW(HKEY_CURRENT_USER, &HSTRING::from(root), None, KEY_READ, &raw mut keys)
             .is_err()
         {
-            return false;
+            return names;
         }
-        let mut found = false;
         let mut index = 0;
         loop {
             let mut name = [0u16; 256];
@@ -148,39 +185,61 @@ fn set_display_version(root: &str, folder: &Path, version: &str) -> bool {
                 break;
             }
             index += 1;
-            let subkey = HSTRING::from_wide(&name[..length as usize]);
-            let mut location = [0u16; 1024];
-            let mut size = 2048u32;
-            let read = RegGetValueW(
-                keys,
-                &subkey,
-                &HSTRING::from("InstallLocation"),
-                RRF_RT_REG_SZ,
-                None,
-                Some(location.as_mut_ptr().cast()),
-                Some(&raw mut size),
-            );
-            if read.is_err() {
-                continue;
-            }
-            let end = location.iter().position(|&c| c == 0).unwrap_or(location.len());
-            if !same_folder(&String::from_utf16_lossy(&location[..end]), folder) {
-                continue;
-            }
-            let wide = wide_value(version);
-            let written = RegSetKeyValueW(
-                keys,
-                &subkey,
+            names.push(format!(r"{root}\{}", String::from_utf16_lossy(&name[..length as usize])));
+        }
+        let _ = RegCloseKey(keys);
+    }
+    names.retain(|key| {
+        read_text(key, "InstallLocation").is_some_and(|location| same_folder(&location, folder))
+    });
+    names
+}
+
+fn set_display_version(root: &str, folder: &Path, version: &str) -> bool {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
+    let wide = wide_value(version);
+    let mut found = false;
+    for key in entries_for(root, folder) {
+        // SAFETY: the strings and the buffer outlive the call.
+        let written = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                &HSTRING::from(key.as_str()),
                 &HSTRING::from("DisplayVersion"),
                 REG_SZ.0,
                 Some(wide.as_ptr().cast()),
                 u32::try_from(wide.len() * 2).unwrap_or(0),
-            );
-            found |= written.is_ok();
-        }
-        let _ = RegCloseKey(keys);
-        found
+            )
+        };
+        found |= written.is_ok();
     }
+    found
+}
+
+fn setup_install_under(root: &str, folder: &Path) -> Option<SetupInstall> {
+    let key = entries_for(root, folder).into_iter().next()?;
+    Some(SetupInstall { installer_version: read_text(&key, "InstallerVersion") })
+}
+
+/// The area outside the taskbar of the screen nearest to the point (`x`, `y`), in physical
+/// pixels: (left, top, right, bottom).
+#[must_use]
+pub fn work_area_near(x: i32, y: i32) -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    let mut info = MONITORINFO {
+        cbSize: u32::try_from(size_of::<MONITORINFO>()).unwrap_or(0),
+        ..MONITORINFO::default()
+    };
+    // SAFETY: the monitor handle needs no closing; Windows fills `info`, which lives for the call.
+    unsafe {
+        let monitor = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+        GetMonitorInfoW(monitor, &raw mut info).as_bool().then_some(())?;
+    }
+    let area = info.rcWork;
+    Some((area.left, area.top, area.right, area.bottom))
 }
 
 /// The primary screen's area outside the taskbar, in physical pixels: (left, top, right, bottom).
@@ -301,6 +360,10 @@ mod tests {
     fn the_work_area_is_a_real_rectangle() {
         let (left, top, right, bottom) = work_area().unwrap();
         assert!(right > left && bottom > top, "{left},{top},{right},{bottom}");
+        let near = work_area_near(i32::midpoint(left, right), i32::midpoint(top, bottom)).unwrap();
+        assert_eq!(near, (left, top, right, bottom), "the primary screen's own point");
+        let far = work_area_near(-100_000, -100_000).unwrap();
+        assert!(far.2 > far.0 && far.3 > far.1, "the nearest screen, however far");
     }
 
     #[test]
@@ -321,44 +384,29 @@ mod tests {
         }
 
         fn entry(&self, name: &str, location: &str, version: &str) {
-            use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
-            for (value, data) in [("InstallLocation", location), ("DisplayVersion", version)] {
-                let wide = wide_value(data);
-                // SAFETY: the strings and the buffer outlive the call.
-                let result = unsafe {
-                    RegSetKeyValueW(
-                        HKEY_CURRENT_USER,
-                        &HSTRING::from(format!(r"{}\{name}", self.0)),
-                        &HSTRING::from(value),
-                        REG_SZ.0,
-                        Some(wide.as_ptr().cast()),
-                        u32::try_from(wide.len() * 2).unwrap(),
-                    )
-                };
-                assert!(result.is_ok());
-            }
+            self.value(name, "InstallLocation", location);
+            self.value(name, "DisplayVersion", version);
         }
 
-        fn version(&self, name: &str) -> String {
-            use windows::Win32::System::Registry::{
-                HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW,
-            };
-            let mut data = [0u16; 64];
-            let mut size = 128u32;
-            // SAFETY: the buffer is local and its size is passed.
+        fn value(&self, name: &str, value: &str, data: &str) {
+            use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
+            let wide = wide_value(data);
+            // SAFETY: the strings and the buffer outlive the call.
             let result = unsafe {
-                RegGetValueW(
+                RegSetKeyValueW(
                     HKEY_CURRENT_USER,
                     &HSTRING::from(format!(r"{}\{name}", self.0)),
-                    &HSTRING::from("DisplayVersion"),
-                    RRF_RT_REG_SZ,
-                    None,
-                    Some(data.as_mut_ptr().cast()),
-                    Some(&raw mut size),
+                    &HSTRING::from(value),
+                    REG_SZ.0,
+                    Some(wide.as_ptr().cast()),
+                    u32::try_from(wide.len() * 2).unwrap(),
                 )
             };
             assert!(result.is_ok());
-            wide_text(&data)
+        }
+
+        fn version(&self, name: &str) -> String {
+            read_text(&format!(r"{}\{name}", self.0), "DisplayVersion").unwrap()
         }
     }
 
@@ -386,6 +434,24 @@ mod tests {
         assert!(!set_display_version(r"Software\AntigravityAccountSwitcherTest-none", folder, "9"));
         // The real list is read without changing anything: no entry is ours.
         assert!(!record_installed_version(Path::new(r"C:\Nowhere\At\All"), "9"));
+    }
+
+    #[test]
+    fn the_installers_record_is_found_by_folder() {
+        let keys = TestKeys::new();
+        keys.entry("{old}_is1", r"C:\Users\x\AppData\Local\Old\", "1.2.0");
+        keys.entry("{new}_is1", r"C:\Users\x\AppData\Local\New\", "1.2.1");
+        keys.value("{new}_is1", "InstallerVersion", "1.2.1");
+        let old = setup_install_under(&keys.0, Path::new(r"C:\Users\X\AppData\Local\Old"));
+        assert_eq!(old, Some(SetupInstall { installer_version: None }), "an older installer");
+        let new = setup_install_under(&keys.0, Path::new(r"C:\Users\x\AppData\Local\New"));
+        assert_eq!(new.unwrap().installer_version.as_deref(), Some("1.2.1"));
+        assert_eq!(setup_install_under(&keys.0, Path::new(r"C:\Portable")), None);
+        assert_eq!(
+            setup_install(Path::new(r"C:\Nowhere\At\All")),
+            None,
+            "the real list, read only"
+        );
     }
 
     #[test]

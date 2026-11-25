@@ -17,6 +17,7 @@
 //! - `type`: text typed into the focused field;
 //! - `sign_in`: `{email, refresh}`, what Antigravity writes when someone finishes signing in;
 //! - `launch`: an account name: the window its desktop shortcut opens;
+//! - `uninstall`: the window the uninstaller opens (`in: "uninstall"` addresses it);
 //! - `show`: brings the main window back;
 //! - `external`: a task for `demo.py`, which answers on standard input when it is done;
 //! - `shot`: a file name, with `in` and either `crop` (`[x, y, width, height]`, logical pixels)
@@ -43,7 +44,7 @@ use std::time::{Duration, Instant};
 
 use app::bootstrap::{self, Parts, Services};
 use app::controller::{self, Controller};
-use app::ui::{AppWindow, CardState, LaunchWindow};
+use app::ui::{AppWindow, CardState, LaunchWindow, UninstallWindow};
 use i_slint_backend_testing::ElementHandle;
 use serde_json::{Value, json};
 use slint::platform::WindowEvent;
@@ -172,6 +173,7 @@ struct Runner {
     main: Option<AppWindow>,
     controller: Option<Controller>,
     launch: Option<LaunchWindow>,
+    uninstall: Option<UninstallWindow>,
     answers: Receiver<String>,
     failures: usize,
     done: bool,
@@ -187,13 +189,14 @@ impl Runner {
         match text(step, "in").as_str() {
             "notice" => controller::shown_notice().map(|notice| act(notice.window())),
             "launch" => self.launch.as_ref().map(|window| act(window.window())),
+            "uninstall" => self.uninstall.as_ref().map(|window| act(window.window())),
             _ => self.main.as_ref().map(|window| act(window.window())),
         }
     }
 
     /// No leftover hover from wherever the real mouse happens to be.
     fn forget_pointer(&self) {
-        for place in ["main", "launch", "notice"] {
+        for place in ["main", "launch", "notice", "uninstall"] {
             self.with_window(&json!({ "in": place }), |window| {
                 window.dispatch_event(WindowEvent::PointerExited);
             });
@@ -208,6 +211,7 @@ impl Runner {
         match text(step, "in").as_str() {
             "notice" => controller::shown_notice().map(|n| finder(&n)).unwrap_or_default(),
             "launch" => self.launch.as_ref().map(|w| finder(w)).unwrap_or_default(),
+            "uninstall" => self.uninstall.as_ref().map(|w| finder(w)).unwrap_or_default(),
             _ => self.main.as_ref().map(|w| finder(w)).unwrap_or_default(),
         }
     }
@@ -324,6 +328,10 @@ impl Runner {
             if self.launch.is_none() {
                 return Err("the shortcut had nothing to do".into());
             }
+        } else if step.get("uninstall").is_some() {
+            let window = app::uninstall::window(&self.services)?;
+            window.show()?;
+            self.uninstall = Some(window);
         } else if step.get("show").is_some() {
             self.controller.as_ref().ok_or("no main window")?.show();
         } else if step.get("external").is_some() {
@@ -482,6 +490,7 @@ fn main() -> Result<(), Failure> {
         main,
         controller,
         launch: None,
+        uninstall: None,
         answers,
         failures: 0,
         done: false,

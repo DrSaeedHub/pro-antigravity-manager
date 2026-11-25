@@ -183,6 +183,15 @@
         {"wait": 1000},
         {"shot": "13-shortcut-failed", "in": "launch"}
       ]
+    },
+    {
+      "name": "uninstall",
+      "main": false,
+      "steps": [
+        {"uninstall": true},
+        {"wait": 900},
+        {"shot": "29-uninstall", "in": "uninstall"}
+      ]
     }
   ]
 }

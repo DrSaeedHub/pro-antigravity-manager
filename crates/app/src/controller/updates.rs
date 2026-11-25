@@ -10,7 +10,7 @@ use std::time::Duration;
 use slint::ComponentHandle;
 use update::{Check, Release, UpdateError};
 
-use super::{Inner, NOTICE, TRAY};
+use super::{Inner, NOTICE, Outcome, TRAY};
 use crate::ui::{AppWindow, NoticeKind, SheetKind, ToastKind, UpdateStage};
 
 /// The project's page (its GitHub repository).
@@ -50,12 +50,39 @@ pub fn megabytes(bytes: u64) -> String {
     format!("{}.{} MB", tenths / 10, tenths % 10)
 }
 
-/// Deletes what an update left next to `exe`, retrying while the previous copy ends.
-pub fn clean_up_after_update(exe: &Path) {
+/// Where a downloaded installer waits until it runs: `updates` in the app's own folder.
+#[must_use]
+pub fn installers_folder(data_dir: &Path) -> PathBuf {
+    data_dir.join("updates")
+}
+
+/// Deletes what an update left next to `exe` and in `installers` (old executables, unfinished
+/// downloads, an installer that already ran), retrying while the previous copy or the installer
+/// ends.
+pub fn clean_up_after_update(exe: &Path, installers: Option<&Path>) {
     let started = std::time::Instant::now();
-    while update::replace::cleanup(exe) > 0 && started.elapsed() < CLEAN_UP_FOR {
+    loop {
+        let mut busy = update::replace::cleanup(exe);
+        if let Some(folder) = installers
+            && folder.exists()
+            && std::fs::remove_dir_all(folder).is_err()
+        {
+            busy += 1;
+        }
+        if busy == 0 || started.elapsed() >= CLEAN_UP_FOR {
+            break;
+        }
         std::thread::sleep(Duration::from_secs(1));
     }
+}
+
+/// Whether an installed copy's installation (its uninstaller, Installed apps entry, shortcuts) is
+/// older than the running version: true for a copy the installer put there, whose installer was
+/// not this version (it updated itself in place since).
+#[cfg(windows)]
+#[must_use]
+pub fn installation_outdated(installed: Option<&desktop::SetupInstall>, version: &str) -> bool {
+    installed.is_some_and(|install| install.installer_version.as_deref() != Some(version))
 }
 
 impl Inner {
@@ -123,6 +150,7 @@ impl Inner {
                 window.set_update_checked_at(at.into());
             }
             Ok(Check::Available(release)) => {
+                let release = *release;
                 let version = release.version.to_string();
                 let news = self.updates().available.as_ref().is_none_or(|known| known != &release);
                 if news {
@@ -251,13 +279,97 @@ impl Inner {
             move |window, inner, installed| match installed {
                 Ok(exe) => {
                     inner.record_installed_version(&exe, &version);
-                    *inner.restart.lock().unwrap_or_else(PoisonError::into_inner) = Some(exe);
+                    *inner.restart.lock().unwrap_or_else(PoisonError::into_inner) =
+                        Some(Outcome::Restart(exe));
                     tracing::info!(%version, "restarting on the new version");
                     inner.quit(window);
                 }
                 Err(error) => inner.update_failed(window, &error),
             },
         );
+    }
+
+    /// After an update, an installed copy brings its installation up to its own version: it
+    /// downloads this version's installer and ends; the installer runs without a window and opens
+    /// the app again. Only while the window is open and nothing else is under way; otherwise the
+    /// next start tries again.
+    pub(super) fn refresh_installation_if_needed(self: &Arc<Self>) {
+        let Some(window) = self.window.upgrade() else { return };
+        if !window.window().is_visible() || !self.refresh_needed() {
+            return;
+        }
+        {
+            let mut updates = self.updates();
+            if updates.busy || self.add_session().is_some() || self.state().switching {
+                return;
+            }
+            updates.busy = true;
+        }
+        let current = env!("CARGO_PKG_VERSION");
+        tracing::info!(version = current, "the installation is older than the app: refreshing it");
+        let inner = self.clone();
+        self.services.runtime.spawn(async move {
+            let updater = &inner.services.updater;
+            let folder =
+                inner.services.accounts.desktop().data_dir().map(|dir| installers_folder(&dir));
+            let result = match (updater.latest().await, folder) {
+                (Ok(Some(release)), Ok(folder)) if release.version.to_string() == current => {
+                    updater
+                        .download_installer(&release, &folder, &|_, _| {}, &AtomicBool::new(false))
+                        .await
+                        .map(|setup| (setup, release))
+                }
+                (Err(error), _) => Err(error),
+                _ => Err(UpdateError::NoBuild),
+            };
+            let back = inner.clone();
+            let _ = inner
+                .window
+                .upgrade_in_event_loop(move |window| back.refresh_ready(&window, result));
+        });
+    }
+
+    #[cfg(windows)]
+    fn refresh_needed(&self) -> bool {
+        let desktop = self.services.accounts.desktop();
+        desktop.is_running_installed()
+            && desktop.current_exe().parent().is_some_and(|folder| {
+                installation_outdated(
+                    desktop::setup_install(folder).as_ref(),
+                    env!("CARGO_PKG_VERSION"),
+                )
+            })
+    }
+
+    #[cfg(not(windows))]
+    fn refresh_needed(&self) -> bool {
+        false
+    }
+
+    fn refresh_ready(
+        self: &Arc<Self>,
+        window: &AppWindow,
+        result: Result<(PathBuf, Release), UpdateError>,
+    ) {
+        match result {
+            Ok((setup, release)) if self.add_session().is_none() && !self.state().switching => {
+                window.set_update_version(release.version.to_string().into());
+                window.set_update_stage(UpdateStage::Installing);
+                window.set_sheet(SheetKind::Update);
+                *self.restart.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(Outcome::RunSetup(setup));
+                tracing::info!("handing over to the installer");
+                self.quit(window);
+            }
+            Ok(_) => {
+                self.updates().busy = false;
+                tracing::info!("the installation refresh waits for the next start");
+            }
+            Err(error) => {
+                self.updates().busy = false;
+                tracing::warn!(code = error.code(), %error, "the installation could not be refreshed");
+            }
+        }
     }
 
     /// Keeps the version in Installed apps right when the installer's copy updated itself.
@@ -411,6 +523,7 @@ mod tests {
                 size: 9_111_831,
                 file: "AntigravityAccountSwitcher.exe".into(),
             },
+            installer: None,
         }
     }
 
@@ -423,7 +536,7 @@ mod tests {
         let rig = rig();
         let inner = &rig.controller.inner;
         rig.window.show().unwrap();
-        inner.check_done(&rig.window, Ok(Check::Available(release("9.9.9"))), false);
+        inner.check_done(&rig.window, Ok(Check::Available(Box::new(release("9.9.9")))), false);
         assert_eq!(rig.window.get_update_version(), "9.9.9");
         assert_eq!(rig.window.get_update_stage(), UpdateStage::Available);
         assert_ne!(rig.window.get_update_checked_at(), "");
@@ -438,13 +551,13 @@ mod tests {
     fn a_hidden_window_gets_one_corner_notice_per_version() {
         let rig = rig();
         let inner = &rig.controller.inner;
-        inner.check_done(&rig.window, Ok(Check::Available(release("9.9.9"))), false);
+        inner.check_done(&rig.window, Ok(Check::Available(Box::new(release("9.9.9")))), false);
         assert_eq!(notice_kind(), Some((NoticeKind::Update, "9.9.9".into())));
         assert_eq!(inner.state().prefs.notified_version, "9.9.9");
         Inner::close_notice();
-        inner.check_done(&rig.window, Ok(Check::Available(release("9.9.9"))), false);
+        inner.check_done(&rig.window, Ok(Check::Available(Box::new(release("9.9.9")))), false);
         assert_eq!(notice_kind(), None, "announced once");
-        inner.check_done(&rig.window, Ok(Check::Available(release("9.9.10"))), false);
+        inner.check_done(&rig.window, Ok(Check::Available(Box::new(release("9.9.10")))), false);
         assert_eq!(notice_kind(), Some((NoticeKind::Update, "9.9.10".into())));
         Inner::close_notice();
     }
@@ -454,7 +567,7 @@ mod tests {
         let rig = rig();
         let inner = &rig.controller.inner;
         inner.show_notice(NoticeKind::Countdown, "a", "b", "90%", "");
-        inner.check_done(&rig.window, Ok(Check::Available(release("9.9.9"))), false);
+        inner.check_done(&rig.window, Ok(Check::Available(Box::new(release("9.9.9")))), false);
         assert_eq!(notice_kind().map(|(kind, _)| kind), Some(NoticeKind::Countdown));
         assert_eq!(inner.state().prefs.notified_version, "", "still to be announced");
         Inner::close_notice();
@@ -590,7 +703,8 @@ mod tests {
     fn a_finished_update_restarts_on_the_new_file() {
         let rig = rig();
         assert_eq!(rig.controller.outcome(), Outcome::Quit);
-        *rig.controller.inner.restart.lock().unwrap() = Some(PathBuf::from("new.exe"));
+        *rig.controller.inner.restart.lock().unwrap() =
+            Some(Outcome::Restart(PathBuf::from("new.exe")));
         assert_eq!(rig.controller.outcome(), Outcome::Restart(PathBuf::from("new.exe")));
         assert_eq!(rig.controller.outcome(), Outcome::Quit, "taken once");
         rig.controller.updated("1.1.0");
@@ -605,8 +719,56 @@ mod tests {
         let exe = dir.path().join("App.exe");
         std::fs::write(&exe, b"x").unwrap();
         std::fs::write(dir.path().join("App.exe.5.old"), b"old").unwrap();
-        clean_up_after_update(&exe);
+        let installers = installers_folder(dir.path());
+        std::fs::create_dir_all(&installers).unwrap();
+        std::fs::write(installers.join("App-1.2.1-setup.exe"), b"ran").unwrap();
+        clean_up_after_update(&exe, Some(&installers));
         assert!(!dir.path().join("App.exe.5.old").exists());
+        assert!(!installers.exists(), "the installer that ran is gone");
         assert!(exe.exists());
+        clean_up_after_update(&exe, None);
+    }
+
+    #[test]
+    fn only_an_installation_older_than_the_app_is_refreshed() {
+        let by = |version: Option<&str>| desktop::SetupInstall {
+            installer_version: version.map(str::to_owned),
+        };
+        assert!(!installation_outdated(None, "1.2.1"), "a portable copy");
+        assert!(installation_outdated(Some(&by(None)), "1.2.1"), "an installer before 1.2.1");
+        assert!(installation_outdated(Some(&by(Some("1.2.1"))), "1.2.2"), "updated in place");
+        assert!(!installation_outdated(Some(&by(Some("1.2.1"))), "1.2.1"));
+    }
+
+    #[test]
+    fn a_ready_installer_ends_the_app_and_runs() {
+        let rig = rig();
+        let inner = &rig.controller.inner;
+        inner.updates().busy = true;
+        let setup = PathBuf::from("App-1.2.1-setup.exe");
+        inner.refresh_ready(&rig.window, Ok((setup.clone(), release("1.2.1"))));
+        assert_eq!(rig.window.get_sheet(), SheetKind::Update);
+        assert_eq!(rig.window.get_update_stage(), UpdateStage::Installing);
+        assert_eq!(rig.controller.outcome(), Outcome::RunSetup(setup));
+    }
+
+    #[test]
+    fn a_refresh_that_cannot_happen_now_waits_quietly() {
+        let rig = rig();
+        let inner = &rig.controller.inner;
+        inner.updates().busy = true;
+        inner.refresh_ready(&rig.window, Err(UpdateError::NoBuild));
+        assert!(!inner.updates().busy);
+        assert_eq!(rig.window.get_sheet(), SheetKind::None);
+
+        inner.updates().busy = true;
+        inner.state().switching = true;
+        inner.refresh_ready(&rig.window, Ok((PathBuf::from("s.exe"), release("1.2.1"))));
+        assert!(!inner.updates().busy, "a switch under way: next start");
+        assert_eq!(rig.controller.outcome(), Outcome::Quit);
+
+        inner.state().switching = false;
+        inner.refresh_installation_if_needed();
+        assert!(!inner.updates().busy, "a hidden window, and no installer record: nothing to do");
     }
 }

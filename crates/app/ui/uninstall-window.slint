@@ -1,0 +1,141 @@
+// The window the uninstaller opens: what removing the app does, and what else to delete.
+
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { ActionButton, ButtonKind, Toggle } from "controls.slint";
+
+// One choice: a title, a line that says what it means now, and a switch.
+component Choice inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> detail;
+    in-out property <bool> on;
+
+    spacing: 16px;
+    VerticalLayout {
+        spacing: 3px;
+        horizontal-stretch: 1;
+        Text { text: root.title; color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; wrap: word-wrap; }
+        Text { text: root.detail; color: root.on ? Theme.flare : Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
+    }
+    VerticalLayout {
+        alignment: center;
+        Toggle { label: root.title; on <=> root.on; }
+    }
+}
+
+export component UninstallWindow inherits Window {
+    in property <int> accounts;
+    in-out property <bool> delete-accounts;
+    in-out property <bool> delete-settings;
+    callback remove();
+    callback cancel();
+
+    title: @tr("Uninstall Antigravity Account Switcher");
+    icon: @image-url("../assets/icon-256.png");
+    no-frame: true;
+    always-on-top: true;
+    background: Theme.space;
+    default-font-family: Theme.body;
+    width: 560px;
+
+    Rectangle {
+        border-width: 1px;
+        border-color: Theme.edge-bright;
+        background: @radial-gradient(circle, #FF5C7A0d 0%, #0B0D1A00 70%);
+    }
+    WindowMoveArea {
+        width: 100%;
+        height: 100%;
+    }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.cancel();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    init => { keys.focus(); }
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 20px;
+
+        HorizontalLayout {
+            spacing: 14px;
+            VerticalLayout {
+                alignment: center;
+                Icon { data: Icons.trash; tint: Theme.flare; size: 26px; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                Text {
+                    text: @tr("Uninstall Antigravity Account Switcher?");
+                    color: Theme.starlight;
+                    font-family: Theme.display;
+                    font-size: Theme.text-lg;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: "ANTIGRAVITY ACCOUNT SWITCHER";
+                    color: Theme.dust-dim;
+                    font-family: Theme.display;
+                    font-size: Theme.text-xs;
+                    letter-spacing: 1.6px;
+                }
+            }
+        }
+
+        Text {
+            text: @tr("This removes the app, its Start menu and desktop shortcuts, every account's desktop shortcut and Start with Windows. Antigravity itself, and the account it is signed in with, stay as they are.");
+            color: Theme.dust;
+            font-size: Theme.text-sm;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            border-radius: 14px;
+            background: Theme.hull;
+            border-width: 1px;
+            border-color: Theme.edge;
+            height: choices.preferred-height;
+
+            choices := VerticalLayout {
+                padding: 18px;
+                spacing: 18px;
+                if root.accounts > 0: Choice {
+                    title: @tr("Also delete my saved account" | "Also delete my {n} saved accounts" % root.accounts);
+                    detail: root.delete-accounts
+                        ? @tr("Their sign-ins are removed from this PC. To use them again, add each one again.")
+                        : @tr("They stay in Windows Credential Manager and come back if you install the app again.");
+                    on <=> root.delete-accounts;
+                }
+                Choice {
+                    title: @tr("Also delete settings and logs");
+                    detail: root.delete-settings
+                        ? @tr("Settings, the diagnostic log and the cached sign-in details are deleted.")
+                        : @tr("They stay in %LOCALAPPDATA%\\AntigravityAccountSwitcher for the next install.");
+                    on <=> root.delete-settings;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
+            ActionButton {
+                text: @tr("Cancel");
+                clicked => { root.cancel(); }
+            }
+            ActionButton {
+                text: @tr("Uninstall");
+                icon: Icons.trash;
+                kind: ButtonKind.danger;
+                clicked => { root.remove(); }
+            }
+        }
+    }
+}

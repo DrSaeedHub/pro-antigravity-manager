@@ -15,4 +15,6 @@ pub use preferences::{PreferenceStore, Preferences};
 pub use service::{Desktop, DesktopSettings};
 pub use shell::{DesktopError, Shell, Shortcut};
 #[cfg(windows)]
-pub use windows::{WindowsShell, record_installed_version, work_area};
+pub use windows::{
+    SetupInstall, WindowsShell, record_installed_version, setup_install, work_area, work_area_near,
+};

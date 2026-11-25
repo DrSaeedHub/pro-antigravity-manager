@@ -185,6 +185,24 @@ impl Accounts {
         Ok(RemoveOutcome { shortcut_error: self.desktop.delete_account_shortcut(name).err() })
     }
 
+    /// Removes every saved account (its sign-in and its desktop shortcut), and a sign-in an
+    /// unfinished add left aside. Antigravity's own sign-in stays. Returns how many could not be
+    /// removed completely.
+    pub fn remove_all(&self) -> Result<usize, AccountsError> {
+        let mut failed = 0;
+        for account in self.list()? {
+            match self.remove(&account.name) {
+                Ok(RemoveOutcome { shortcut_error: None }) => {}
+                Ok(_) | Err(_) => failed += 1,
+            }
+        }
+        if self.store.delete(&self.settings.rollback()).is_err() {
+            failed += 1;
+        }
+        tracing::info!(failed, "every saved account removed");
+        Ok(failed)
+    }
+
     /// Creates (or replaces) the desktop shortcut that switches to `name`.
     pub fn create_shortcut(
         &self,
@@ -405,6 +423,37 @@ pub(crate) mod tests {
             Some(sign_in("w@example.com")),
             "Antigravity stays signed in"
         );
+    }
+
+    #[test]
+    fn removing_everything_leaves_antigravitys_own_sign_in() {
+        let world = World::new();
+        world.save("work", "w@example.com");
+        world.save("home", "h@example.com");
+        world.store.insert(&World::slot("setup-rollback"), &sign_in("old@example.com"));
+        world.store.insert(CANONICAL, &sign_in("w@example.com"));
+        let shortcut = world.accounts.create_shortcut("work").unwrap().unwrap();
+
+        assert_eq!(world.accounts.remove_all().unwrap(), 0);
+        assert!(world.accounts.list().unwrap().is_empty());
+        assert!(world.store.read_blob(&World::slot("setup-rollback")).unwrap().is_none());
+        assert!(!shortcut.exists());
+        assert_eq!(world.signed_in(), Some(sign_in("w@example.com")));
+        assert_eq!(world.accounts.remove_all().unwrap(), 0, "nothing left is fine");
+    }
+
+    #[test]
+    fn removing_everything_counts_what_stayed() {
+        let world = World::new();
+        world.save("work", "w@example.com");
+        world.save("home", "h@example.com");
+        world.store.fail(Operation::Delete, &World::slot("work"));
+        assert_eq!(world.accounts.remove_all().unwrap(), 1, "work stayed");
+        assert_eq!(world.accounts.list().unwrap().len(), 1);
+        world.store.fail(Operation::Delete, &World::slot("setup-rollback"));
+        assert_eq!(world.accounts.remove_all().unwrap(), 2, "work and the set-aside sign-in");
+        world.store.fail(Operation::List, "antigravity-switcher:");
+        assert_eq!(world.accounts.remove_all().unwrap_err().code(), "vault.system");
     }
 
     #[test]

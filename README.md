@@ -60,7 +60,8 @@ shortcuts keep working.
 | `AntigravityAccountSwitcher.exe --launch <name>` | What an account's desktop shortcut runs: the small switch window only |
 | `AntigravityAccountSwitcher.exe --version` | Prints the version and exits (the updater asks a downloaded copy this before trusting it) |
 | `AntigravityAccountSwitcher.exe --updated <old version>` | How the previous version starts the new one after an update: the window opens and says it updated |
-| `AntigravityAccountSwitcher.exe --uninstall` | What the uninstaller runs: removes every saved account's desktop shortcut and the Start with Windows shortcut |
+| `AntigravityAccountSwitcher.exe --uninstall-dialog` | The window the uninstaller opens; its answer is the exit code (0 keep, 20 remove, +1 also the saved accounts, +2 also settings and logs) |
+| `AntigravityAccountSwitcher.exe --uninstall [--delete-accounts]` | What the uninstaller runs: removes every saved account's desktop shortcut and the Start with Windows shortcut, and with `--delete-accounts` the saved accounts too |
 
 Only these exact forms count; the switch's letter case does not matter. Any other arguments open
 the window.
@@ -74,12 +75,18 @@ the same channel a second start uses to show the window, and closes a copy too o
 it to the same folder the installer uses, with desktop and Start-menu shortcuts. Both kinds of
 copy update themselves the same way.
 
-**Removing.** If you used the installer, uninstall it from Installed apps: it removes the program,
-its shortcuts, every saved account's desktop shortcut and Start with Windows, and keeps your
-settings and saved accounts. To remove those too, remove each account in the window first (that
-deletes its saved sign-in), then delete `%LOCALAPPDATA%\AntigravityAccountSwitcher`. A portable copy
-is removed the same way by hand: remove the accounts, turn Start with Windows off in Settings,
-Quit, and delete the folder and the shortcuts. Antigravity's own sign-in stays as it is.
+**Removing.** If you used the installer, uninstall it from Installed apps. Instead of Windows'
+bare "Are you sure" box, the app's own window says what goes (the app, its shortcuts, every
+account's desktop shortcut and Start with Windows) and what stays (Antigravity and the account it
+is signed in with), with two switches that are off unless you turn them on: also delete the saved
+accounts, and also delete settings and logs. A scripted uninstall asks nothing and keeps both:
+`unins000.exe /VERYSILENT`, adding `/DELETEACCOUNTS` and `/DELETESETTINGS` to delete them. A
+portable copy is removed by hand: remove the accounts in the window, turn Start with Windows off in
+Settings, Quit, and delete the folder and the shortcuts.
+
+<div align="center">
+<img src="docs/screenshots/29-uninstall.png" alt="Uninstall Antigravity Account Switcher? With switches to also delete the saved accounts and the settings" width="560">
+</div>
 
 </details>
 
@@ -226,8 +233,9 @@ HTTPS, match the size and SHA-256 in the manifest, and the executable inside it 
 report the version it was offered. Then the running file is renamed aside (Windows lets a running
 program be renamed, not overwritten), the new one takes its name, and the app restarts on it and
 says so; the old file is deleted on that start. A copy that cannot write its own folder says so and
-offers the download page instead. An installed copy also keeps the version in Installed apps
-current. Prereleases are never offered.
+offers the download page instead. **An installed copy then brings its installation along**: it
+downloads that version's installer, runs it without a window and opens again, so its uninstaller
+and its entry in Installed apps always match the app. Prereleases are never offered.
 
 | About, with the new version | Updating |
 |---|---|
@@ -276,7 +284,7 @@ The first start has nothing to show, and says what to do next:
 | **Tray** | Closing keeps it running · every account's 5-hour and weekly quota in the menu · pick an account to switch · Update to a new version · automatic switching and Start with Windows as check items · Settings, the GitHub page and Quit · the active account's quota in the tooltip · one running copy per Windows user: opening it again restores that copy's window, and a copy stuck while closing is taken over, never doubled |
 | **Automatic switching** | Threshold 1–50% (5%) on the 5-hour and weekly limits · the most-left account as target, unknown quota never one · countdown notice 0–600 s (60 s) with Switch now and Not now · a quiet sign-in change when Antigravity is closed · one notice with the earliest refill when every account is empty · waits for a fresh reading after each switch |
 | **Updates** | A check 5 s after start and every 60 s, from GitHub's download network, through the Windows proxy · Update in the header, the tray and About · one corner notice per version while the window is hidden · progress and Cancel · HTTPS from this repository only, size, SHA-256 and a `--version` answer checked before anything is replaced · the running file renamed aside, never overwritten, put back if the swap fails · restart on the new version with a note · old files cleaned on the next start · waits while an account is being added or a switch runs · prereleases and older versions never offered · automatic checks can be turned off |
-| **Install** | A per-user installer (no administrator rights, Start menu, desktop, optional Start with Windows, Installed apps, an uninstaller that keeps settings and accounts) · or a portable executable · Install on this PC from the portable copy · both update themselves |
+| **Install** | A per-user installer (no administrator rights, Start menu, desktop, optional Start with Windows, Installed apps) · an uninstall window of the app's own: what goes and what stays, with switches to also delete the saved accounts and the settings, both off by default · scripted `/VERYSILENT [/DELETEACCOUNTS] [/DELETESETTINGS]` · or a portable executable · Install on this PC from the portable copy · both update themselves, and an installed copy refreshes its installation after each update |
 | **Privacy and safety** | Sign-ins only in Windows Credential Manager · only Google's token and quota endpoints and this repository's releases contacted · a log that never holds a token · no administrator rights · removing an account never touches projects or conversations |
 | **Compatibility** | The saved accounts, account shortcuts, install folder and sign-in client cache of version 1.2 of the earlier switcher keep working |
 | **Interface** | A dark theme of its own · frameless window with the Windows 11 shadow and rounded corners · English, with every sentence ready for translation · labels for screen readers and UI Automation on every control · About links to this repository |
@@ -295,10 +303,11 @@ The first start has nothing to show, and says what to do next:
 | `%LOCALAPPDATA%\AntigravityAccountSwitcher\oauth-client.bin` | Antigravity's sign-in client, encrypted with DPAPI for your Windows user |
 | `%LOCALAPPDATA%\AntigravityAccountSwitcher\logs\app.log` | A diagnostic log, moved to `app.1.log` at start once it passes 1 MiB |
 | Next to the running executable, for a moment | `…download.zip` and `…new.exe` during an update, `….exe.<time>.old` until the next start |
+| `%LOCALAPPDATA%\AntigravityAccountSwitcher\updates` | An installer waiting to run after an update, until the next start |
 | Desktop, `Antigravity - <name>.lnk` | An account's shortcut |
 | Desktop and Start menu, `Antigravity Account Switcher.lnk` | The app |
 | Startup folder, `Antigravity Account Switcher.lnk` | Start with Windows, running `--tray` |
-| `HKCU\…\CurrentVersion\Uninstall\{6F0D6D3C-…}_is1` | The Installed apps entry, written by the installer |
+| `HKCU\…\CurrentVersion\Uninstall\{6F0D6D3C-…}_is1` | The Installed apps entry, written by the installer; `InstallerVersion` says which installer ran last |
 
 **Network.** A saved refresh token is exchanged at `oauth2.googleapis.com` for an access token,
 using the installed-app sign-in client that ships inside Antigravity: the switcher finds it by

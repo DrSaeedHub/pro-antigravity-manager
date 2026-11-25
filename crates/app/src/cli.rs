@@ -28,6 +28,18 @@ pub const UPDATED: &str = "--updated";
 /// The switch the uninstaller passes.
 pub const UNINSTALL: &str = "--uninstall";
 
+/// After `--uninstall`: also delete every saved account.
+pub const DELETE_ACCOUNTS: &str = "--delete-accounts";
+
+/// The switch the uninstaller passes to ask what to remove (the answer is the exit code).
+pub const UNINSTALL_DIALOG: &str = "--uninstall-dialog";
+
+/// Whether the arguments are exactly `--uninstall-dialog`.
+#[must_use]
+pub fn uninstall_dialog_request(args: &[String]) -> bool {
+    only(args, UNINSTALL_DIALOG)
+}
+
 fn only(args: &[String], switch: &str) -> bool {
     matches!(args, [flag] if flag.eq_ignore_ascii_case(switch))
 }
@@ -38,10 +50,29 @@ pub fn version_request(args: &[String]) -> bool {
     only(args, VERSION)
 }
 
-/// Whether the arguments are exactly `--uninstall`.
+/// What the uninstaller asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Uninstall {
+    /// Remove the shortcuts the app made; saved accounts stay.
+    Shortcuts,
+    /// Also delete every saved account.
+    Everything,
+}
+
+/// The uninstaller's request, when the arguments are exactly `--uninstall`, optionally followed
+/// by `--delete-accounts`.
 #[must_use]
-pub fn uninstall_request(args: &[String]) -> bool {
-    only(args, UNINSTALL)
+pub fn uninstall_request(args: &[String]) -> Option<Uninstall> {
+    match args {
+        [flag] if flag.eq_ignore_ascii_case(UNINSTALL) => Some(Uninstall::Shortcuts),
+        [flag, delete]
+            if flag.eq_ignore_ascii_case(UNINSTALL)
+                && delete.eq_ignore_ascii_case(DELETE_ACCOUNTS) =>
+        {
+            Some(Uninstall::Everything)
+        }
+        _ => None,
+    }
 }
 
 /// The version this copy was updated from, when the arguments are exactly `--updated <version>`.
@@ -54,13 +85,20 @@ pub fn updated_from(args: &[String]) -> Option<&str> {
 }
 
 /// Removes what the app put outside its folder: every saved account's desktop shortcut and the
-/// Start-with-Windows shortcut. Saved accounts and settings stay. Returns the shortcuts that could
-/// not be removed.
+/// Start-with-Windows shortcut, and with [`Uninstall::Everything`] the saved accounts themselves.
+/// Antigravity's own sign-in and the settings stay. Returns what could not be removed.
 #[must_use]
-pub fn uninstall(services: &Services) -> usize {
+pub fn uninstall(services: &Services, scope: Uninstall) -> usize {
     let desktop = services.accounts.desktop();
     let mut failed = 0;
-    match services.accounts.list() {
+    let listed = match scope {
+        Uninstall::Everything => services.accounts.remove_all().map(|left| {
+            failed += left;
+            Vec::new()
+        }),
+        Uninstall::Shortcuts => services.accounts.list(),
+    };
+    match listed {
         Ok(saved) => {
             for account in saved {
                 if let Err(error) = desktop.delete_account_shortcut(&account.name) {
@@ -69,13 +107,16 @@ pub fn uninstall(services: &Services) -> usize {
                 }
             }
         }
-        Err(error) => tracing::warn!(code = error.code(), %error, "saved accounts unreadable"),
+        Err(error) => {
+            tracing::warn!(code = error.code(), %error, "saved accounts unreadable");
+            failed += 1;
+        }
     }
     if let Err(error) = desktop.set_start_with_windows(false) {
         tracing::warn!(code = error.code(), %error, "Start with Windows left on");
         failed += 1;
     }
-    tracing::info!(failed, "uninstall clean-up done");
+    tracing::info!(failed, ?scope, "uninstall clean-up done");
     failed
 }
 
@@ -175,11 +216,14 @@ pub fn open(services: &Services, name: &str) -> Result<Option<LaunchWindow>, sli
         }
     }
     window.show()?;
+    crate::window::keep_on_screen(window.window());
     Ok(Some(window))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn args(list: &[&str]) -> Vec<String> {
@@ -200,23 +244,72 @@ mod tests {
         assert!(version_request(&args(&["--version"])));
         assert!(version_request(&args(&["--VERSION"])));
         assert!(!version_request(&args(&["--version", "x"])));
-        assert!(uninstall_request(&args(&["--uninstall"])));
-        assert!(!uninstall_request(&args(&[])));
+        assert_eq!(uninstall_request(&args(&["--uninstall"])), Some(Uninstall::Shortcuts));
+        assert_eq!(
+            uninstall_request(&args(&["--UNINSTALL", "--delete-accounts"])),
+            Some(Uninstall::Everything)
+        );
+        assert_eq!(uninstall_request(&args(&["--uninstall", "--other"])), None);
+        assert!(uninstall_dialog_request(&args(&["--uninstall-dialog"])));
+        assert!(!uninstall_dialog_request(&args(&["--uninstall-dialog", "x"])));
+        assert_eq!(uninstall_request(&args(&[])), None);
         assert_eq!(updated_from(&args(&["--updated", "1.1.0"])), Some("1.1.0"));
         assert_eq!(updated_from(&args(&["--updated"])), None);
         assert_eq!(updated_from(&args(&["--tray", "1.1.0"])), None);
     }
 
+    /// Preview services with the accounts `work` and `home` saved, and their shortcuts.
+    fn with_accounts(dir: &std::path::Path) -> (Services, Arc<vault::MemoryStore>) {
+        let store = Arc::new(vault::MemoryStore::new());
+        let blob = br#"{"id_token_email":"a@example.com","token":{"refresh_token":"r"}}"#;
+        store.insert("antigravity-switcher:work", blob);
+        store.insert("antigravity-switcher:home", blob);
+        store.insert("gemini:antigravity", blob);
+        let parts = crate::bootstrap::Parts {
+            store: store.clone(),
+            ..crate::bootstrap::preview_parts(dir)
+        };
+        let services = crate::bootstrap::build(parts).unwrap();
+        for name in ["work", "home"] {
+            services.accounts.create_shortcut(name).unwrap().unwrap();
+        }
+        services.accounts.desktop().set_start_with_windows(true).unwrap();
+        (services, store)
+    }
+
     #[test]
     fn uninstalling_removes_the_shortcuts_the_app_made() {
         let dir = tempfile::tempdir().unwrap();
-        let services =
-            crate::bootstrap::build(crate::bootstrap::preview_parts(dir.path())).unwrap();
+        let (services, store) = with_accounts(dir.path());
         let desktop = services.accounts.desktop();
-        desktop.set_start_with_windows(true).unwrap();
-        assert!(desktop.starts_with_windows());
-        assert_eq!(uninstall(&services), 0);
+        let work = desktop.account_shortcut_path("work").unwrap();
+        assert!(work.exists() && desktop.starts_with_windows());
+        assert_eq!(uninstall(&services, Uninstall::Shortcuts), 0);
+        assert!(!work.exists());
         assert!(!desktop.starts_with_windows());
+        assert_eq!(services.accounts.list().unwrap().len(), 2, "saved accounts stay");
+        assert!(
+            vault::CredentialStore::read_blob(store.as_ref(), "gemini:antigravity")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn uninstalling_everything_also_deletes_the_saved_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let (services, store) = with_accounts(dir.path());
+        assert_eq!(uninstall(&services, Uninstall::Everything), 0);
+        assert!(services.accounts.list().unwrap().is_empty());
+        assert!(!services.accounts.desktop().account_shortcut_path("home").unwrap().exists());
+        assert!(
+            vault::CredentialStore::read_blob(store.as_ref(), "gemini:antigravity")
+                .unwrap()
+                .is_some(),
+            "Antigravity stays signed in"
+        );
+        store.fail(vault::Operation::List, "antigravity-switcher:");
+        assert_eq!(uninstall(&services, Uninstall::Everything), 1, "unreadable accounts count");
     }
 
     #[test]

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.1
+
+- Uninstalling opens the app's own window instead of Windows' bare "Are you sure" box. It says
+  what is removed (the app, its shortcuts, every account's desktop shortcut and Start with
+  Windows) and what stays (Antigravity and the account it is signed in with), and offers two
+  switches, both off unless you turn them on: also delete the saved accounts, and also delete
+  settings and logs. Cancel keeps everything. A scripted uninstall asks nothing:
+  `unins000.exe /VERYSILENT`, with `/DELETEACCOUNTS` and `/DELETESETTINGS` when wanted.
+- An installed copy that updates itself now brings its whole installation along: after
+  restarting on the new version it downloads that version's installer, runs it without a window
+  and opens again, so the uninstaller and the Installed apps entry always match the app. The
+  release feed lists the installer for this.
+- Corner notices (the countdown when quota runs out, every account being empty, a new version)
+  always sit wholly on screen, in the bottom-right corner above the taskbar, on top of other
+  windows. Before, a notice could hang off the bottom of the screen when Windows applied the
+  screen's scaling after the notice had been placed. The main window and the shortcut window are
+  moved back onto the screen they are on when part of them would be off it.
+
 ## 1.2.0
 
 - Updates: the app looks for a new version on GitHub soon after it starts and then every minute,

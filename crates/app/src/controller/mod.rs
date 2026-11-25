@@ -76,8 +76,9 @@ struct Inner {
     add: Mutex<Option<AddSession>>,
     toast_serial: AtomicI32,
     updates: Mutex<updates::UpdateState>,
-    /// Set when an update is in place: the app ends and starts this executable.
-    restart: Mutex<Option<PathBuf>>,
+    /// Set when the app should end in a particular way: restart on an updated executable, or
+    /// run an installer.
+    restart: Mutex<Option<Outcome>>,
 }
 
 impl std::fmt::Debug for Inner {
@@ -612,6 +613,7 @@ impl Inner {
     /// Brings the window back (from the tray, the taskbar or behind other windows).
     fn show_window(window: &AppWindow) {
         let _ = window.show();
+        crate::window::keep_on_screen(window.window());
         crate::window::bring_to_front(window.window());
     }
 
@@ -866,6 +868,7 @@ impl Inner {
                     Self::close_notice();
                 }
             });
+            crate::window::pin_bottom_right(notice.window());
             NOTICE.with_borrow_mut(|slot| *slot = Some(notice));
         }
         NOTICE.with_borrow(|notice| {
@@ -1013,6 +1016,7 @@ impl Controller {
             slint::Timer::single_shot(updates::FIRST_CHECK, move || {
                 if let Some(inner) = inner.upgrade() {
                     inner.scheduled_check();
+                    inner.refresh_installation_if_needed();
                 }
             });
         }
@@ -1092,7 +1096,7 @@ impl Controller {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
-            .map_or(Outcome::Quit, Outcome::Restart)
+            .unwrap_or(Outcome::Quit)
     }
 }
 
@@ -1103,6 +1107,8 @@ pub enum Outcome {
     Quit,
     /// An update is in place: start this executable.
     Restart(PathBuf),
+    /// Run this installer, which updates the installation and opens the app again.
+    RunSetup(PathBuf),
 }
 
 /// How the app was started.
@@ -1127,7 +1133,9 @@ pub fn run(
     requests: Option<Requests>,
 ) -> Result<Outcome, slint::PlatformError> {
     let exe = services.accounts.desktop().current_exe().to_path_buf();
-    std::thread::spawn(move || updates::clean_up_after_update(&exe));
+    let installers =
+        services.accounts.desktop().data_dir().ok().map(|dir| updates::installers_folder(&dir));
+    std::thread::spawn(move || updates::clean_up_after_update(&exe, installers.as_deref()));
     let window = AppWindow::new()?;
     let controller = Controller::new(&window, services);
     if start == Start::Window || updated_from.is_some() {

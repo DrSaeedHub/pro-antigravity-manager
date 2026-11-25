@@ -10,10 +10,18 @@
 //!     "url": "https://github.com/<owner>/<repo>/releases/download/v1.2.0/<name>-1.2.0-portable.zip",
 //!     "sha256": "<64 hex digits>",
 //!     "size": 9111831,
-//!     "file": "AntigravityAccountSwitcher.exe"
+//!     "file": "AntigravityAccountSwitcher.exe",
+//!     "installer": {
+//!       "url": "https://github.com/<owner>/<repo>/releases/download/v1.2.0/<name>-1.2.0-setup.exe",
+//!       "sha256": "<64 hex digits>",
+//!       "size": 8877179,
+//!       "file": "<name>-1.2.0-setup.exe"
+//!     }
 //!   }
 //! }
 //! ```
+//!
+//! `installer` is optional (a release may have none); older versions ignore it.
 
 use reqwest::Url;
 use semver::Version;
@@ -37,6 +45,8 @@ pub struct Release {
     pub notes: String,
     /// The package for this platform.
     pub package: Package,
+    /// The installer for this platform, when the release has one.
+    pub installer: Option<Package>,
 }
 
 /// The download for one platform.
@@ -48,7 +58,7 @@ pub struct Package {
     pub sha256: String,
     /// Its size in bytes.
     pub size: u64,
-    /// The executable's file name inside the zip.
+    /// The executable's file name inside the zip, or the installer's own file name.
     pub file: String,
 }
 
@@ -75,6 +85,24 @@ pub fn parse(manifest: &str, platform: &str, repository: &str) -> Result<Release
     let version = Version::parse(version.trim_start_matches('v'))
         .map_err(|error| bad(&format!("version {version}: {error}")))?;
     let entry = root.get(platform).filter(|entry| entry.is_object()).ok_or(UpdateError::NoBuild)?;
+    let package = package(entry, repository)?;
+    // A broken installer entry must not stop updates of the executable: it is left out.
+    let installer = entry
+        .get("installer")
+        .filter(|installer| installer.is_object())
+        .and_then(|installer| self::package(installer, repository).ok());
+    let notes = text(&root, "notes").filter(|notes| trusted(notes, repository)).unwrap_or_default();
+    Ok(Release {
+        version,
+        published: text(&root, "published").unwrap_or_default().to_owned(),
+        notes: notes.to_owned(),
+        package,
+        installer,
+    })
+}
+
+/// One download: an address under `repository`, its SHA-256, its size and a plain file name.
+fn package(entry: &Value, repository: &str) -> Result<Package, UpdateError> {
     let url = text(entry, "url").ok_or_else(|| bad("no package address"))?;
     if !trusted(url, repository) {
         return Err(UpdateError::Untrusted(url.to_owned()));
@@ -91,13 +119,7 @@ pub fn parse(manifest: &str, platform: &str, repository: &str) -> Result<Release
     if file.contains(['/', '\\', ':']) || file.starts_with('.') {
         return Err(bad("the executable name is not a plain file name"));
     }
-    let notes = text(&root, "notes").filter(|notes| trusted(notes, repository)).unwrap_or_default();
-    Ok(Release {
-        version,
-        published: text(&root, "published").unwrap_or_default().to_owned(),
-        notes: notes.to_owned(),
-        package: Package { url: url.to_owned(), sha256, size, file: file.to_owned() },
-    })
+    Ok(Package { url: url.to_owned(), sha256, size, file: file.to_owned() })
 }
 
 /// Whether `url` lives under `repository`: same scheme, host and port, a path inside the
@@ -155,6 +177,30 @@ mod tests {
         assert_eq!(release.package.sha256, "ab".repeat(32));
         assert_eq!(release.package.size, 9_111_831);
         assert_eq!(release.package.file, "App.exe");
+        assert_eq!(release.installer, None, "this release has no installer");
+    }
+
+    #[test]
+    fn an_installer_entry_is_read_and_a_broken_one_left_out() {
+        let package = format!("{REPO}/releases/download/v1.2.0/app-1.2.0-portable.zip");
+        let setup = format!("{REPO}/releases/download/v1.2.0/app-1.2.0-setup.exe");
+        let with = entry(&package).replace(
+            r#","file":"App.exe"}"#,
+            &format!(
+                r#","file":"App.exe","installer":{{"url":"{setup}","sha256":"{}","size":8877179,"file":"app-1.2.0-setup.exe"}}}}"#,
+                "cd".repeat(32)
+            ),
+        );
+        let release = parse(&manifest(&with), "windows-x64", REPO).unwrap();
+        let installer = release.installer.unwrap();
+        assert_eq!(installer.url, setup);
+        assert_eq!(installer.size, 8_877_179);
+        assert_eq!(installer.file, "app-1.2.0-setup.exe");
+
+        let broken = with.replace(&setup, "https://evil.example/setup.exe");
+        let release = parse(&manifest(&broken), "windows-x64", REPO).unwrap();
+        assert_eq!(release.installer, None);
+        assert_eq!(release.package.url, package, "the executable still updates");
     }
 
     #[test]

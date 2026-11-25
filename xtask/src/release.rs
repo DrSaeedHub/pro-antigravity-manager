@@ -97,7 +97,8 @@ pub fn sha256(bytes: &[u8]) -> String {
     })
 }
 
-/// `latest.json`: the feed `crates/update` reads.
+/// `latest.json`: the feed `crates/update` reads. `setup` is the installer, when there is one:
+/// installed copies run it after updating themselves.
 #[must_use]
 pub fn manifest(
     version: &str,
@@ -106,9 +107,10 @@ pub fn manifest(
     published: &str,
     names: &Names,
     zip: &[u8],
+    setup: Option<&[u8]>,
 ) -> String {
     let base = repository.trim_end_matches('/');
-    let value = json!({
+    let mut value = json!({
         "schema": 1,
         "version": version,
         "published": published,
@@ -120,6 +122,14 @@ pub fn manifest(
             "file": EXECUTABLE,
         }
     });
+    if let Some(setup) = setup {
+        value[PLATFORM]["installer"] = json!({
+            "url": format!("{base}/releases/download/{tag}/{}", names.setup),
+            "sha256": sha256(setup),
+            "size": setup.len(),
+            "file": names.setup,
+        });
+    }
     let mut text = serde_json::to_string_pretty(&value).unwrap_or_default();
     text.push('\n');
     text
@@ -218,6 +228,7 @@ mod tests {
             "2026-11-25T10:00:00Z",
             &names,
             b"zip",
+            Some(b"setup"),
         );
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["schema"], 1);
@@ -229,6 +240,18 @@ mod tests {
             "https://github.com/o/r/releases/download/v1.2.0/AntigravityAccountSwitcher-1.2.0-portable.zip"
         );
         assert_eq!(entry["sha256"], sha256(b"zip"));
+        let installer = &entry["installer"];
+        assert_eq!(
+            installer["url"],
+            "https://github.com/o/r/releases/download/v1.2.0/AntigravityAccountSwitcher-1.2.0-setup.exe"
+        );
+        assert_eq!(installer["sha256"], sha256(b"setup"));
+        assert_eq!(installer["size"], 5);
+        assert_eq!(installer["file"], "AntigravityAccountSwitcher-1.2.0-setup.exe");
+        let portable_only =
+            manifest("1.2.0", "v1.2.0", "https://github.com/o/r", "x", &names, b"z", None);
+        let value: serde_json::Value = serde_json::from_str(&portable_only).unwrap();
+        assert!(value[PLATFORM].get("installer").is_none());
         assert_eq!(entry["size"], 3);
         assert_eq!(entry["file"], EXECUTABLE);
     }

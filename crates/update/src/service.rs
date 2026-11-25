@@ -98,7 +98,7 @@ pub enum Check {
     /// Nothing newer (or nothing published yet).
     UpToDate,
     /// A newer release for this platform.
-    Available(Release),
+    Available(Box<Release>),
 }
 
 /// Checks the release feed and installs releases.
@@ -137,6 +137,16 @@ impl Updater {
 
     /// Reads the newest release's manifest. Nothing published yet counts as up to date.
     pub async fn check(&self) -> Result<Check, UpdateError> {
+        Ok(match self.latest().await? {
+            Some(release) if is_newer(&self.settings.current, &release.version) => {
+                Check::Available(Box::new(release))
+            }
+            _ => Check::UpToDate,
+        })
+    }
+
+    /// The newest release, whatever its version; `None` when nothing is published yet.
+    pub async fn latest(&self) -> Result<Option<Release>, UpdateError> {
         let response = self
             .http
             .get(self.settings.feed_url())
@@ -146,19 +156,34 @@ impl Updater {
             .map_err(|error| UpdateError::Network(net::describe(&error)))?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
-            return Ok(Check::UpToDate);
+            return Ok(None);
         }
         if !status.is_success() {
             return Err(UpdateError::Feed(status.as_u16()));
         }
         let text =
             response.text().await.map_err(|error| UpdateError::Network(net::describe(&error)))?;
-        let release = feed::parse(&text, &self.settings.platform, &self.settings.repository)?;
-        Ok(if is_newer(&self.settings.current, &release.version) {
-            Check::Available(release)
-        } else {
-            Check::UpToDate
-        })
+        feed::parse(&text, &self.settings.platform, &self.settings.repository).map(Some)
+    }
+
+    /// Downloads `release`'s installer into `folder`, checking its size and SHA-256. Returns the
+    /// installer's path.
+    pub async fn download_installer(
+        &self,
+        release: &Release,
+        folder: &Path,
+        progress: &(dyn Fn(u64, u64) + Sync),
+        cancel: &AtomicBool,
+    ) -> Result<PathBuf, UpdateError> {
+        let installer = release.installer.as_ref().ok_or(UpdateError::NoBuild)?;
+        if !feed::trusted(&installer.url, &self.settings.repository) {
+            return Err(UpdateError::Untrusted(installer.url.clone()));
+        }
+        std::fs::create_dir_all(folder)
+            .map_err(|error| UpdateError::file("creating", folder, &error))?;
+        let path = folder.join(&installer.file);
+        download(&self.http, installer, &path, progress, cancel).await?;
+        Ok(path)
     }
 
     /// Downloads `release` next to `exe`, checks it, takes the new executable out and makes sure
@@ -289,7 +314,7 @@ mod tests {
 
         async fn available(&self, updater: &Updater) -> Release {
             match updater.check().await.unwrap() {
-                Check::Available(release) => release,
+                Check::Available(release) => *release,
                 Check::UpToDate => panic!("an update was expected"),
             }
         }
@@ -456,5 +481,59 @@ mod tests {
         let error = updater.http.get("http://127.0.0.1:9/x").send().await.unwrap_err();
         assert!(!net::describe(&error).is_empty());
         assert_eq!(updater.settings().repository, "https://github.com/o/r");
+    }
+
+    #[tokio::test]
+    async fn the_latest_release_is_read_whatever_its_version() {
+        let rig = Rig::new().await;
+        let updater = rig.updater("9.9.9", FakeProbe::answering("9.9.9"));
+        assert_eq!(updater.latest().await.unwrap(), None, "nothing published yet");
+        rig.publish(rig.manifest("9.9.9")).await;
+        assert_eq!(updater.check().await.unwrap(), Check::UpToDate);
+        let latest = updater.latest().await.unwrap().unwrap();
+        assert_eq!(latest.version, Version::new(9, 9, 9));
+    }
+
+    #[tokio::test]
+    async fn an_installer_is_downloaded_and_checked() {
+        const SETUP: &[u8] = b"pretend installer";
+        let rig = Rig::new().await;
+        let mut manifest = rig.manifest("9.9.9");
+        manifest[platform()]["installer"] = json!({
+            "url": format!("{}/releases/download/v9.9.9/app-setup.exe", rig.repository()),
+            "sha256": hex(&Sha256::digest(SETUP)),
+            "size": SETUP.len(),
+            "file": "app-setup.exe",
+        });
+        rig.publish(manifest).await;
+        Mock::given(method("GET"))
+            .and(path("/owner/repo/releases/download/v9.9.9/app-setup.exe"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(SETUP.to_vec()))
+            .mount(&rig.server)
+            .await;
+        let updater = rig.updater("9.9.9", FakeProbe::answering("9.9.9"));
+        let mut release = updater.latest().await.unwrap().unwrap();
+        let folder = rig.dir.path().join("updates");
+        let go = AtomicBool::new(false);
+        let setup = updater.download_installer(&release, &folder, &|_, _| {}, &go).await.unwrap();
+        assert_eq!(setup, folder.join("app-setup.exe"));
+        assert_eq!(std::fs::read(&setup).unwrap(), SETUP);
+
+        let installer = release.installer.as_mut().unwrap();
+        installer.sha256 = hex(&Sha256::digest(b"something else"));
+        let error = updater.download_installer(&release, &folder, &|_, _| {}, &go).await;
+        assert_eq!(error.unwrap_err(), UpdateError::Checksum);
+        release.installer.as_mut().unwrap().url = "https://evil.example/owner/repo/s.exe".into();
+        let error = updater.download_installer(&release, &folder, &|_, _| {}, &go).await;
+        assert_eq!(error.unwrap_err().code(), "update.untrusted");
+        release.installer = None;
+        let error = updater.download_installer(&release, &folder, &|_, _| {}, &go).await;
+        assert_eq!(error.unwrap_err(), UpdateError::NoBuild);
+        let blocked = rig.dir.path().join("a-file");
+        std::fs::write(&blocked, b"x").unwrap();
+        release.installer = updater.latest().await.unwrap().unwrap().installer;
+        let error =
+            updater.download_installer(&release, &blocked.join("sub"), &|_, _| {}, &go).await;
+        assert_eq!(error.unwrap_err().code(), "update.file");
     }
 }

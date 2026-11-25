@@ -226,7 +226,21 @@ fn dist(args: &[String]) -> Result<(), String> {
 
     let zip_bytes = fs::read(&zip).map_err(|error| format!("{}: {error}", zip.display()))?;
     let published = jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let manifest = release::manifest(version, &tag, repository, &published, &names, &zip_bytes);
+    let setup_bytes = if options.portable_only {
+        None
+    } else {
+        let setup = out.join(&names.setup);
+        Some(fs::read(&setup).map_err(|error| format!("{}: {error}", setup.display()))?)
+    };
+    let manifest = release::manifest(
+        version,
+        &tag,
+        repository,
+        &published,
+        &names,
+        &zip_bytes,
+        setup_bytes.as_deref(),
+    );
     write(&out.join("latest.json"), &manifest)?;
     let mut sums = String::new();
     for file in &files {

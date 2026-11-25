@@ -3,6 +3,7 @@
 pub mod bootstrap;
 pub mod cli;
 pub mod controller;
+pub mod uninstall;
 pub mod view;
 pub mod window;
 
