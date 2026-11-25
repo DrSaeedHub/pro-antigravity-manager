@@ -13,6 +13,10 @@ and the impact. Remove personal data from screenshots and logs first.
   as a whole and never changes its content or writes it to a file.
 - Access tokens live in memory only. Refresh tokens are sent only to `oauth2.googleapis.com`;
   quota requests go only to `cloudcode-pa.googleapis.com`, through the Windows proxy settings.
+- Updates are read from this project's GitHub releases over HTTPS only. A download is used only
+  if it comes from this repository, matches the size and SHA-256 in the release's `latest.json`,
+  and the executable inside it starts and reports the version it was offered; the running
+  executable is replaced only after that, and only when you choose Update.
 - Antigravity's sign-in client is read from its install and cached with DPAPI (current user) in
   `%LOCALAPPDATA%\AntigravityAccountSwitcher\oauth-client.bin`.
 - The log in `%LOCALAPPDATA%\AntigravityAccountSwitcher\logs` never contains tokens: secret values

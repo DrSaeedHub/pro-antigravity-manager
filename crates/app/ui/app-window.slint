@@ -981,7 +981,7 @@ export component AppWindow inherits Window {
         dismiss => { root.close-sheet(); }
 
         Text {
-            text: @tr("Switch between your Antigravity accounts and see the quota each one has left. Saved sign-ins stay in Windows Credential Manager on this PC; nothing is sent anywhere except Google's own quota service, with each account's own sign-in.");
+            text: @tr("Switch between your Antigravity accounts and see the quota each one has left. Saved sign-ins stay in Windows Credential Manager on this PC; the app talks only to Google's own quota service, with each account's own sign-in, and to this project's releases on GitHub to look for a new version.");
             color: Theme.dust;
             font-size: Theme.text-sm;
             wrap: word-wrap;
