@@ -26,7 +26,6 @@ fn gauge(fraction: f32, resets: &str) -> Gauge {
         percent: SharedString::from(format!("{:.0}%", fraction * 100.0)),
         resets: resets.into(),
         low: fraction < 0.2,
-        window: "5h".into(),
     }
 }
 
@@ -44,17 +43,16 @@ fn account(name: &str, email: &str, plan: &str, active: bool) -> AccountView {
 
 fn demo() -> Vec<AccountView> {
     let mut work = account("work", "ada.work@example.com", "GOOGLE AI PRO", true);
-    work.five_hour = gauge(0.82, "2h 15m");
-    work.weekly = gauge(0.41, "3d 4h");
-    work.weekly.window = "weekly".into();
-    work.gemini = gauge(0.95, "4h 2m");
+    work.claude_five_hour = gauge(0.82, "2h 15m");
+    work.claude_weekly = gauge(0.41, "3d 4h");
+    work.gemini_five_hour = gauge(0.6, "3h 49m");
+    work.gemini_weekly = gauge(0.89, "6d 22h");
 
     let mut personal = account("personal", "ada@example.com", "FREE", false);
-    personal.five_hour = gauge(0.12, "48m");
-    personal.weekly = gauge(0.67, "5d 2h");
-    personal.weekly.window = "weekly".into();
-    personal.gemini = gauge(0.55, "6d 1h");
-    personal.gemini.window = "weekly".into();
+    personal.claude_five_hour = gauge(0.12, "48m");
+    personal.claude_weekly = gauge(0.67, "5d 2h");
+    personal.gemini_five_hour = gauge(1.0, "");
+    personal.gemini_weekly = gauge(0.55, "6d 1h");
 
     let mut lab = account("lab-2", "lab.two@example.com", "", false);
     lab.state = CardState::Failed;
@@ -79,8 +77,8 @@ fn row(label: &str, kind: RowKind, fraction: f32, note: &str) -> DetailRow {
 
 fn details() -> Details {
     let gemini = vec![
-        row("5-hour limit", RowKind::Gemini, 0.95, "4h 2m · 18:32"),
-        row("Weekly limit", RowKind::Gemini, 0.97, "6d 4h · Tue 2 Dec 18:32"),
+        row("5-hour limit", RowKind::GeminiFiveHour, 0.6, "3h 49m · 18:21"),
+        row("Weekly limit", RowKind::GeminiWeekly, 0.89, "6d 22h · Wed 3 Dec 12:54"),
     ];
     let limits = vec![
         row("5-hour limit", RowKind::FiveHour, 0.82, "2h 15m · 16:45"),

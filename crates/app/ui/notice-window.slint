@@ -5,6 +5,7 @@
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
 import { ActionButton, ButtonKind } from "controls.slint";
+import { DisplayLabel, BodyLabel } from "text.slint";
 
 export enum NoticeKind { countdown, all-empty, signed-in, in-tray, update }
 
@@ -50,28 +51,25 @@ export component NoticeWindow inherits Window {
         HorizontalLayout {
             spacing: 12px;
             VerticalLayout {
-                alignment: start;
+                alignment: center;
                 Icon {
-                    data: root.kind == NoticeKind.all-empty ? Icons.warning
-                        : root.kind == NoticeKind.countdown ? Icons.rocket
+                    source: root.kind == NoticeKind.all-empty ? Icons.warning
+                        : root.kind == NoticeKind.countdown ? Icons.switch
                         : root.kind == NoticeKind.signed-in ? Icons.check
-                    : root.kind == NoticeKind.update ? Icons.install : Icons.info;
+                    : root.kind == NoticeKind.update ? Icons.download : Icons.info;
                     tint: root.tint;
                     size: 22px;
                 }
             }
-            Text {
+            DisplayLabel {
                 text: root.kind == NoticeKind.countdown ? @tr("{} is out of quota", root.from)
                     : root.kind == NoticeKind.all-empty ? @tr("Every account is out of quota")
                     : root.kind == NoticeKind.signed-in ? @tr("Switched to {}", root.to)
                     : root.kind == NoticeKind.update ? @tr("Version {} is ready", root.to)
                     : @tr("Still running in the tray");
-                color: Theme.starlight;
-                font-family: Theme.display;
                 font-size: Theme.text-md + 2px;
-                font-weight: 600;
                 overflow: elide;
-                vertical-alignment: center;
+                horizontal-stretch: 1;
             }
         }
 

@@ -1,46 +1,46 @@
-// Line icons drawn on a 24×24 grid.
+// Line icons: SVG files in icons/ drawn on a 24×24 grid with a 2-unit stroke (1.5 for the
+// window buttons), round caps and joins, in white. Slint renders an SVG at the size it is shown,
+// so they stay sharp at every screen scale, and `colorize` gives them any color.
 
 import { Theme } from "theme.slint";
 
 export global Icons {
-    out property <string> plus: "M12 5v14M5 12h14";
-    out property <string> refresh: "M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4";
-    out property <string> more: "M5 12h.01M12 12h.01M19 12h.01";
-    out property <string> close: "M6.5 6.5l11 11M17.5 6.5l-11 11";
-    out property <string> minimize: "M6 12h12";
-    out property <string> maximize: "M7 7h10v10H7z";
-    out property <string> restore: "M9 9h9v9H9zM6 15V6h9";
-    out property <string> details: "M4 19h16M7 16V11M12 16V6M17 16v-3";
-    out property <string> shortcut: "M8 16L16 8M10 8h6v6";
-    out property <string> trash: "M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12";
-    out property <string> check: "M5 12.5l4.5 4.5L19 7.5";
-    out property <string> warning: "M12 4l9 16H3zM12 10v4M12 17h.01";
-    out property <string> install: "M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14";
-    out property <string> help: "M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1 1-1.1 1.8M12 16.5h.01";
-    out property <string> info: "M12 11v5.5M12 7.5h.01";
-    out property <string> rocket: "M12 3c3 2.5 4.5 6 4 10l-2 3h-4l-2-3c-.5-4 1-7.5 4-10zM10 19l2 2 2-2";
+    out property <image> plus: @image-url("icons/plus.svg");
+    out property <image> minus: @image-url("icons/minus.svg");
+    out property <image> refresh: @image-url("icons/refresh.svg");
+    out property <image> more: @image-url("icons/more.svg");
+    out property <image> close: @image-url("icons/close.svg");
+    out property <image> check: @image-url("icons/check.svg");
+    // Switch to an account.
+    out property <image> switch: @image-url("icons/switch.svg");
+    // Open in another program: Antigravity, a web page.
+    out property <image> external: @image-url("icons/external.svg");
+    // Quota details.
+    out property <image> gauge: @image-url("icons/gauge.svg");
+    // A desktop shortcut.
+    out property <image> shortcut: @image-url("icons/shortcut.svg");
+    out property <image> trash: @image-url("icons/trash.svg");
+    // Install and update.
+    out property <image> download: @image-url("icons/download.svg");
+    // Settings.
+    out property <image> sliders: @image-url("icons/sliders.svg");
+    // Quit.
+    out property <image> power: @image-url("icons/power.svg");
+    out property <image> warning: @image-url("icons/warning.svg");
+    out property <image> info: @image-url("icons/info.svg");
+    out property <image> help: @image-url("icons/help.svg");
+    out property <image> minimize: @image-url("icons/minimize.svg");
+    out property <image> maximize: @image-url("icons/maximize.svg");
+    out property <image> restore: @image-url("icons/restore.svg");
 }
 
-export component Icon inherits Rectangle {
-    in property <string> data;
+export component Icon inherits Image {
     in property <brush> tint: Theme.starlight;
     in property <length> size: 18px;
-    in property <length> weight: 1.8px;
-    width: self.size;
-    height: self.size;
 
-    Path {
-        width: 100%;
-        height: 100%;
-        viewbox-x: 0;
-        viewbox-y: 0;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        commands: root.data;
-        stroke: root.tint;
-        stroke-width: root.weight;
-        stroke-line-cap: round;
-        stroke-line-join: round;
-        fill: transparent;
-    }
+    width: root.size;
+    height: root.size;
+    image-fit: contain;
+    colorize: root.tint;
+    accessible-role: none;
 }

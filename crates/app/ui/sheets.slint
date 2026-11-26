@@ -3,10 +3,15 @@
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
 
+// A quarter arc turning on its track. The arc has `fit: preserve` so it lies on the track's
+// centre line (see orbit-gauge.slint).
 export component Spinner inherits Rectangle {
     in property <length> size: 22px;
     in property <color> tint: Theme.ion;
     property <bool> spinning;
+    property <length> weight: 2.4px * root.size / 24px;
+    property <float> center: root.size / 1px / 2;
+    property <float> radius: (root.size - self.weight) / 1px / 2;
     init => { self.spinning = true; }
 
     width: root.size;
@@ -16,21 +21,31 @@ export component Spinner inherits Rectangle {
         width: 100%;
         height: 100%;
         border-radius: self.width / 2;
-        border-width: 2.4px * root.size / 24px;
+        border-width: root.weight;
         border-color: root.tint.with-alpha(0.15);
     }
     Path {
         width: 100%;
         height: 100%;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        commands: "M12 1.2 A10.8 10.8 0 0 1 22.8 12";
+        fit: preserve;
         stroke: root.tint;
-        stroke-width: 2.4px * root.size / 24px;
+        stroke-width: root.weight;
         stroke-line-cap: round;
         fill: transparent;
         transform-rotation: root.spinning ? 360deg : 0deg;
         animate transform-rotation { duration: 900ms; iteration-count: -1; easing: linear; }
+
+        MoveTo {
+            x: root.center;
+            y: root.center - root.radius;
+        }
+        ArcTo {
+            x: root.center + root.radius;
+            y: root.center;
+            radius-x: root.radius;
+            radius-y: root.radius;
+            sweep: true;
+        }
     }
 }
 
@@ -53,8 +68,11 @@ export component TextField inherits Rectangle {
     border-color: root.invalid ? Theme.flare : input.has-focus ? Theme.ion : Theme.edge;
     animate border-color { duration: Theme.quick; }
 
+    // Both lines move up by Segoe UI Variable's 0.03 em, so their capitals sit on the field's
+    // centre line (see text.slint).
     input := TextInput {
         x: 16px;
+        y: -Theme.text-md * 0.03;
         width: parent.width - 32px;
         height: 100%;
         vertical-alignment: center;
@@ -69,6 +87,7 @@ export component TextField inherits Rectangle {
     }
     if input.text == "": Text {
         x: 16px;
+        y: -Theme.text-md * 0.03;
         height: 100%;
         vertical-alignment: center;
         text: root.placeholder;
@@ -86,6 +105,10 @@ export component Sheet inherits Rectangle {
     callback dismiss();
 
     property <bool> shown;
+    // How far below its place the card starts; only this animates, so the card stays centred
+    // while the window is resized.
+    property <length> lift: root.shown ? 0 : 14px;
+    animate lift { duration: 220ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
     init => {
         self.shown = true;
         keys.focus();
@@ -118,8 +141,7 @@ export component Sheet inherits Rectangle {
         width: min(root.sheet-width, root.width - 48px);
         height: body.preferred-height;
         x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2 + (root.shown ? 0 : 14px);
-        animate y { duration: 220ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        y: (root.height - self.height) / 2 + root.lift;
         border-radius: 20px;
         background: Theme.hull;
         border-width: 1px;
@@ -163,7 +185,9 @@ export component Problem inherits HorizontalLayout {
     spacing: 8px;
     VerticalLayout {
         alignment: start;
-        Icon { data: Icons.warning; tint: Theme.flare; size: 16px; }
+        // Centres the icon on the first line's capitals.
+        padding-top: 1.5px;
+        Icon { source: Icons.warning; tint: Theme.flare; size: 16px; }
     }
     Text {
         text: root.text;

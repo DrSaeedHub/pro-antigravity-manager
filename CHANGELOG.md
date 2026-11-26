@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.0
+
+A full pass over the interface.
+
+- Cards show all four limits: a small table with Claude and GPT and Gemini as rows and 5-hour and
+  weekly as columns, each with its percent and the time until it refills. The orbit gauge has one
+  orbit per limit, and a coloured dot ties each number to its orbit (5-hour limits warm, weekly
+  ones cool; Gemini's 5-hour limit has a colour of its own, pink).
+- Cards never overflow. Before, at some window widths a card was narrower than its content, so
+  countdowns and the ACTIVE tag spilled out of it. The grid now never makes a card narrower than
+  its content needs (checked at every width from 900 to 2000 pixels), and long names, emails and
+  plans shorten with an ellipsis instead of pushing anything out.
+- The satellites sit exactly on the ends of their orbits. Slint draws a path shrunk by its stroke
+  width unless told otherwise, so each arc ran about two pixels inside its track and off its
+  satellite. The arcs, the logo and the spinner now draw on their tracks' centre lines.
+- New icons throughout, drawn as SVG on one grid with one stroke, sharp at every screen scale:
+  a swap icon for Switch, an external-link icon for Open, a gauge for quota details, a monitor for
+  desktop shortcuts, sliders for Settings, a power icon for Quit, and redrawn refresh, download,
+  help, info, warning, trash, plus, minus and window buttons.
+- Text sits on the centre line of its button, tag or row. Each font places its capitals off the
+  centre of its line box (Bahnschrift above it, Segoe UI Variable below), so labels rode a pixel
+  above their icons and names beside numbers sat lower than them; labels now correct for their
+  font and line up to half a pixel at 100%, 125% and 150%.
+- Resizing the window no longer drags the closed quota details panel, or a hidden notice at the
+  bottom, into view for a moment. Dialogs stay centred while the window is resized.
+- Maximize follows Windows: it maximizes and restores through the window system and shows
+  Maximize or Restore as Windows sees the window, also after Win+Up, snapping or a double-click.
+- A scroll bar appears beside the cards when they do not all fit; drag it or click its track.
+
 ## 1.2.2
 
 - Quota matches what Antigravity shows. Google now has two groups of limits, Gemini models and

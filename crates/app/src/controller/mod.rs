@@ -954,6 +954,18 @@ impl Controller {
             let _ = &i;
             crate::window::minimize(w.window());
         });
+        on!(on_toggle_maximize, |w, i| {
+            let _ = &i;
+            crate::window::toggle_maximize(w.window());
+        });
+        {
+            let weak = window.as_weak();
+            crate::window::on_zoom_change(window.window(), move |zoomed| {
+                if let Some(window) = weak.upgrade() {
+                    window.set_zoomed(zoomed);
+                }
+            });
+        }
         on!(on_quit, |w, i| i.quit(&w));
         on!(on_settings_changed, |w, i| i.settings_changed(&w));
         on!(on_start_with_windows_toggled, |w, i, on| i.set_start_with_windows(&w, on));

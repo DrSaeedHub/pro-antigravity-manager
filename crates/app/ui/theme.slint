@@ -14,10 +14,11 @@ export global Theme {
     out property <color> dust: #8A90B8;
     out property <color> dust-dim: #5C618A;
 
-    // Quota and state
-    out property <color> solar: #FFB86B;   // 5-hour limit
-    out property <color> ion: #5CE1E6;     // weekly limit, primary actions, focus
-    out property <color> nebula: #B79CFF;  // Gemini models
+    // Quota and state. 5-hour limits are warm, weekly limits cool.
+    out property <color> solar: #FFB86B;   // Claude and GPT 5-hour limit
+    out property <color> ion: #5CE1E6;     // Claude and GPT weekly limit, primary actions, focus
+    out property <color> pulsar: #FF8FC8;  // Gemini 5-hour limit
+    out property <color> nebula: #B79CFF;  // Gemini weekly limit, Gemini models, the plan
     out property <color> aurora: #6EF0B0;  // the active account
     out property <color> flare: #FF5C7A;   // errors, low fuel, destructive actions
 

@@ -44,20 +44,17 @@ pub fn gauge(fraction: Option<f64>, reset: Option<Timestamp>, now: Timestamp) ->
             percent: percent(value).into(),
             resets: countdown(value, reset, now).unwrap_or_default().into(),
             low: value < LOW,
-            window: SharedString::new(),
         },
     }
 }
 
-/// One limit on a card, with its window (`5h`, `weekly`, or empty for a single model).
 fn limit(bucket: Option<&QuotaBucket>, now: Timestamp) -> Gauge {
-    let mut shown = gauge(bucket.map(|b| b.fraction), bucket.and_then(|b| b.reset), now);
-    shown.window = bucket.map(|b| b.window.to_ascii_lowercase()).unwrap_or_default().into();
-    shown
+    gauge(bucket.map(|b| b.fraction), bucket.and_then(|b| b.reset), now)
 }
 
-/// A card for `saved`, with its quota when known: the Claude and GPT group's 5-hour and weekly
-/// limits, and Gemini's tighter limit.
+/// A card for `saved`, with its quota when known: the 5-hour and weekly limits of both groups.
+/// Without a Gemini group, the recommended Gemini model with the least left stands in for its
+/// 5-hour limit (a model's quota follows that limit) and its weekly limit is unknown.
 #[must_use]
 pub fn account_view(
     saved: &SavedAccount,
@@ -85,9 +82,16 @@ pub fn account_view(
     }
     view.state = CardState::Ready;
     view.plan = quota.plan.clone().unwrap_or_default().to_uppercase().into();
-    view.five_hour = limit(quota.bucket("5h"), now);
-    view.weekly = limit(quota.bucket("weekly"), now);
-    view.gemini = limit(quota.gemini().as_ref(), now);
+    view.claude_five_hour = limit(quota.bucket("5h"), now);
+    view.claude_weekly = limit(quota.bucket("weekly"), now);
+    let gemini = quota.gemini_group();
+    view.gemini_five_hour = if let Some(bucket) = gemini.and_then(|group| group.bucket("5h")) {
+        limit(Some(bucket), now)
+    } else {
+        let model = quota.lowest_gemini();
+        gauge(model.map(|m| m.fraction), model.and_then(|m| m.reset), now)
+    };
+    view.gemini_weekly = limit(gemini.and_then(|group| group.bucket("weekly")), now);
     view
 }
 
@@ -126,16 +130,19 @@ fn bucket_label(window: &str, name: &str, id: &str) -> String {
     }
 }
 
-fn bucket_kind(window: &str) -> RowKind {
-    match window.to_ascii_lowercase().as_str() {
-        "5h" => RowKind::FiveHour,
-        "weekly" => RowKind::Weekly,
-        _ => RowKind::Other,
+fn bucket_kind(window: &str, gemini: bool) -> RowKind {
+    match (window.to_ascii_lowercase().as_str(), gemini) {
+        ("5h", false) => RowKind::FiveHour,
+        ("weekly", false) => RowKind::Weekly,
+        ("5h", true) => RowKind::GeminiFiveHour,
+        ("weekly", true) => RowKind::GeminiWeekly,
+        (_, true) => RowKind::Gemini,
+        (_, false) => RowKind::Other,
     }
 }
 
-/// The details drawer for `saved`: every group's limits in Google's order (the Gemini group's in
-/// Gemini's colour), then every model.
+/// The details drawer for `saved`: every group's limits in Google's order, each in its orbit's
+/// colour, then every model.
 #[must_use]
 pub fn details(
     saved: &SavedAccount,
@@ -171,14 +178,9 @@ pub fn details(
                     .buckets
                     .iter()
                     .map(|b| {
-                        let kind = if group.is_gemini() {
-                            RowKind::Gemini
-                        } else {
-                            bucket_kind(&b.window)
-                        };
                         row(
                             &bucket_label(&b.window, &b.name, &b.id),
-                            kind,
+                            bucket_kind(&b.window, group.is_gemini()),
                             b.fraction,
                             b.reset,
                             now,
@@ -380,16 +382,15 @@ mod tests {
         assert!(view.active, "emails compare case-insensitively");
         assert_eq!(view.plan, "GOOGLE AI PRO");
         assert_eq!(view.email, "work@example.com", "the quota's email wins");
-        assert_eq!(view.five_hour.percent, "12%");
-        assert_eq!(view.five_hour.resets, "2h 15m");
-        assert!(view.five_hour.low);
-        assert_eq!(view.weekly.percent, "100%");
-        assert_eq!(view.weekly.resets, "", "a full limit shows no countdown");
-        assert_eq!(view.five_hour.window, "5h");
-        assert_eq!(view.weekly.window, "weekly");
-        assert_eq!(view.gemini.percent, "40%", "Gemini's tighter limit, not a model's");
-        assert_eq!(view.gemini.window, "weekly");
-        assert!(view.gemini.present);
+        assert_eq!(view.claude_five_hour.percent, "12%");
+        assert_eq!(view.claude_five_hour.resets, "2h 15m");
+        assert!(view.claude_five_hour.low);
+        assert_eq!(view.claude_weekly.percent, "100%");
+        assert_eq!(view.claude_weekly.resets, "", "a full limit shows no countdown");
+        assert_eq!(view.gemini_five_hour.percent, "95%", "the group's limit, not a model's");
+        assert_eq!(view.gemini_five_hour.resets, "4h 0m");
+        assert_eq!(view.gemini_weekly.percent, "40%");
+        assert!(view.gemini_weekly.present && view.gemini_five_hour.present);
     }
 
     #[test]
@@ -398,17 +399,17 @@ mod tests {
         quota.groups.remove(0);
         let view =
             account_view(&saved("work", None), Some(&quota), None, at("2026-11-23T10:00:00Z"));
-        assert_eq!(view.gemini.percent, "55%");
-        assert_eq!(view.gemini.window, "");
-        assert_eq!(view.five_hour.percent, "12%");
+        assert_eq!(view.gemini_five_hour.percent, "55%", "the lowest Gemini model");
+        assert!(!view.gemini_weekly.present);
+        assert_eq!(view.claude_five_hour.percent, "12%");
     }
 
     #[test]
     fn missing_limits_are_not_present() {
         let quota = AccountQuota::new("x", at("2026-11-23T10:00:00Z"));
         let view = account_view(&saved("x", None), Some(&quota), None, at("2026-11-23T10:00:00Z"));
-        assert!(!view.five_hour.present && !view.weekly.present && !view.gemini.present);
-        assert_eq!(view.gemini.window, "");
+        assert!(!view.claude_five_hour.present && !view.claude_weekly.present);
+        assert!(!view.gemini_five_hour.present && !view.gemini_weekly.present);
         assert_eq!(view.plan, "");
     }
 
@@ -501,7 +502,8 @@ mod tests {
         assert_eq!(gemini.name, "Gemini Models", "Google's order");
         let labels: Vec<_> = gemini.rows.iter().map(|r| r.label.to_string()).collect();
         assert_eq!(labels, ["5-hour limit", "Weekly limit"]);
-        assert!(gemini.rows.iter().all(|r| r.kind == RowKind::Gemini));
+        let kinds: Vec<_> = gemini.rows.iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, [RowKind::GeminiFiveHour, RowKind::GeminiWeekly]);
         let group = view.groups.row_data(1).unwrap();
         assert_eq!(group.name, "Claude and GPT");
         let labels: Vec<_> = group.rows.iter().map(|r| r.label.to_string()).collect();

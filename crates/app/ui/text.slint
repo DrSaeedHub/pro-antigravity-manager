@@ -1,0 +1,62 @@
+// Text centred by its capitals.
+//
+// A text's line box is what layouts centre, but each font puts its capitals somewhere else inside
+// that box. Bahnschrift's capitals sit 0.061 em above the box's centre (its metrics: ascender
+// 1626, descender 422, cap height 1454 of 2048), Segoe UI Variable's 0.03 em below it (measured
+// in renders; Slint does not lay it out by the ascender in its file). Left alone, a Bahnschrift
+// button label rides a pixel above its icon, and a Segoe name beside a Bahnschrift number sits
+// lower than it. These labels move the text by the font's amount (a padding of twice it on one
+// side of a centred block), so capitals sit on the centre line of whatever they are centred in:
+// a button, a tag, a row with an icon or a dot.
+
+import { Theme } from "theme.slint";
+
+// A line in the display font, Bahnschrift.
+export component DisplayLabel inherits VerticalLayout {
+    in property <string> text;
+    in property <brush> color: Theme.starlight;
+    in property <length> font-size: Theme.text-md;
+    in property <int> font-weight: 600;
+    in property <length> letter-spacing: 0;
+    in property <TextHorizontalAlignment> horizontal-alignment: TextHorizontalAlignment.left;
+    in property <TextOverflow> overflow: TextOverflow.clip;
+
+    alignment: center;
+    padding-top: root.font-size * 0.122;
+    Text {
+        text: root.text;
+        color: root.color;
+        font-family: Theme.display;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        letter-spacing: root.letter-spacing;
+        horizontal-alignment: root.horizontal-alignment;
+        overflow: root.overflow;
+    }
+}
+
+// Text in the body font, Segoe UI Variable: one line, or wrapped.
+export component BodyLabel inherits VerticalLayout {
+    in property <string> text;
+    in property <brush> color: Theme.starlight;
+    in property <length> font-size: Theme.text-sm;
+    in property <int> font-weight: 400;
+    in property <TextHorizontalAlignment> horizontal-alignment: TextHorizontalAlignment.left;
+    in property <TextOverflow> overflow: TextOverflow.clip;
+    in property <TextWrap> wrap: TextWrap.no-wrap;
+    in property <int> max-lines: 0;
+
+    alignment: center;
+    padding-bottom: root.font-size * 0.06;
+    Text {
+        text: root.text;
+        color: root.color;
+        font-family: Theme.body;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        horizontal-alignment: root.horizontal-alignment;
+        overflow: root.overflow;
+        wrap: root.wrap;
+        max-lines: root.max-lines;
+    }
+}

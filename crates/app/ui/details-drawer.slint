@@ -5,8 +5,10 @@ import { Icons, Icon } from "icons.slint";
 import { IconButton, Tag } from "controls.slint";
 import { Copy } from "copy.slint";
 import { Spinner } from "sheets.slint";
+import { DisplayLabel, BodyLabel } from "text.slint";
 
-export enum RowKind { five-hour, weekly, gemini, other }
+// The colour of a row: a group's limit takes its orbit's colour, a Gemini model Nebula.
+export enum RowKind { five-hour, weekly, gemini-five-hour, gemini-weekly, gemini, other }
 
 export struct DetailRow {
     label: string,
@@ -38,32 +40,28 @@ component Bar inherits VerticalLayout {
     in property <DetailRow> item;
     property <color> tint: root.item.kind == RowKind.five-hour ? Theme.solar
         : root.item.kind == RowKind.weekly ? Theme.ion
-        : root.item.kind == RowKind.gemini ? Theme.nebula
+        : root.item.kind == RowKind.gemini-five-hour ? Theme.pulsar
+        : root.item.kind == RowKind.gemini-weekly || root.item.kind == RowKind.gemini ? Theme.nebula
         : Theme.dust;
 
     spacing: 7px;
     HorizontalLayout {
         spacing: 10px;
-        Text {
+        BodyLabel {
             text: root.item.label;
-            color: Theme.starlight;
-            font-size: Theme.text-sm;
             overflow: elide;
             horizontal-stretch: 1;
         }
-        Text {
+        DisplayLabel {
             text: root.item.note;
             color: Theme.dust;
-            font-family: Theme.display;
             font-size: Theme.text-xs;
-            vertical-alignment: center;
+            font-weight: 400;
         }
-        Text {
+        DisplayLabel {
             text: root.item.percent;
             color: root.item.low ? Theme.flare : Theme.starlight;
-            font-family: Theme.display;
             font-size: Theme.text-sm;
-            font-weight: 600;
             horizontal-alignment: right;
             min-width: 40px;
         }
@@ -97,9 +95,13 @@ export component DetailsDrawer inherits Rectangle {
     callback close();
 
     property <length> panel-width: min(440px, root.width - 60px);
+    // 0 closed, 1 open. Only this animates: the panel's place follows the window's width at once,
+    // so resizing the window never drags a closed panel into view or leaves an open one behind.
+    property <float> progress: root.open ? 1 : 0;
+    animate progress { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
 
-    background: root.open ? #04050C80 : #04050C00;
-    animate background { duration: Theme.calm; }
+    visible: root.progress > 0;
+    background: rgba(4, 5, 12, 0.5 * root.progress);
 
     if root.open: TouchArea {
         clicked => { root.close(); }
@@ -108,8 +110,8 @@ export component DetailsDrawer inherits Rectangle {
     panel := Rectangle {
         width: root.panel-width;
         height: root.height;
-        x: root.open ? root.width - self.width : root.width + 40px;
-        animate x { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        // Closed, it waits past the edge by its shadow's reach.
+        x: root.width + 48px - (self.width + 48px) * root.progress;
         background: Theme.hull;
         border-width: 1px;
         border-color: Theme.edge-bright;
@@ -156,7 +158,7 @@ export component DetailsDrawer inherits Rectangle {
                 if root.details.plan != "": Tag { text: root.details.plan; tint: Theme.nebula; }
                 if root.details.updated != "": VerticalLayout {
                     alignment: center;
-                    Text {
+                    BodyLabel {
                         text: @tr("Updated {}", root.details.updated);
                         color: Theme.dust;
                         font-size: Theme.text-xs;
@@ -168,7 +170,7 @@ export component DetailsDrawer inherits Rectangle {
             if root.details.loading: HorizontalLayout {
                 spacing: 10px;
                 Spinner { size: 18px; }
-                Text { text: @tr("Reading quota…"); color: Theme.dust; font-size: Theme.text-sm; vertical-alignment: center; }
+                BodyLabel { text: @tr("Reading quota…"); color: Theme.dust; }
             }
 
             if root.details.problem-code != "": Text {

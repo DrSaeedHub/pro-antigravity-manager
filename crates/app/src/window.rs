@@ -46,6 +46,29 @@ pub fn minimize(window: &slint::Window) {
     window.with_winit_window(|winit_window| winit_window.set_minimized(true));
 }
 
+/// Maximizes `window`, or restores it when it is maximized, as Windows sees it: Slint's own
+/// `maximized` property can lag behind a change Windows made itself (Win+Up, snapping, a
+/// double-click on the title bar).
+pub fn toggle_maximize(window: &slint::Window) {
+    use slint::winit_030::WinitWindowAccessor;
+    window
+        .with_winit_window(|winit_window| winit_window.set_maximized(!winit_window.is_maximized()));
+}
+
+/// Calls `changed` with whether `window` is maximized each time its size changes, so the title
+/// bar offers Maximize or Restore as Windows sees the window.
+pub fn on_zoom_change(window: &slint::Window, changed: impl Fn(bool) + 'static) {
+    use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
+    window.on_winit_window_event(move |window, event| {
+        if matches!(event, winit::event::WindowEvent::Resized(_))
+            && let Some(zoomed) = window.with_winit_window(winit::window::Window::is_maximized)
+        {
+            changed(zoomed);
+        }
+        EventResult::Propagate
+    });
+}
+
 /// Brings `window` to the front, restored if it was minimized.
 pub fn bring_to_front(window: &slint::Window) {
     use slint::winit_030::WinitWindowAccessor;

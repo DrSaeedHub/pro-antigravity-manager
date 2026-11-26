@@ -5,6 +5,7 @@ import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
 import { ActionButton, ButtonKind } from "controls.slint";
 import { Copy } from "copy.slint";
+import { DisplayLabel, BodyLabel } from "text.slint";
 import { Spinner, Problem } from "sheets.slint";
 
 export enum LaunchStage { working, confirm, failed }
@@ -44,27 +45,24 @@ export component LaunchWindow inherits Window {
             VerticalLayout {
                 alignment: center;
                 if root.stage == LaunchStage.working: Spinner { size: 26px; }
-                if root.stage == LaunchStage.confirm: Icon { data: Icons.rocket; tint: Theme.ion; size: 26px; }
-                if root.stage == LaunchStage.failed: Icon { data: Icons.warning; tint: Theme.flare; size: 26px; }
+                if root.stage == LaunchStage.confirm: Icon { source: Icons.switch; tint: Theme.ion; size: 26px; }
+                if root.stage == LaunchStage.failed: Icon { source: Icons.warning; tint: Theme.flare; size: 26px; }
             }
             VerticalLayout {
                 alignment: center;
                 spacing: 3px;
-                Text {
+                DisplayLabel {
                     text: root.stage == LaunchStage.failed ? @tr("Couldn't switch to {}", root.account)
                         : root.stage == LaunchStage.confirm ? @tr("Switch to {}?", root.account)
                         : @tr("Switching to {}…", root.account);
-                    color: Theme.starlight;
-                    font-family: Theme.display;
                     font-size: Theme.text-lg;
-                    font-weight: 600;
                     overflow: elide;
                 }
-                Text {
+                DisplayLabel {
                     text: "ANTIGRAVITY ACCOUNT SWITCHER";
                     color: Theme.dust-dim;
-                    font-family: Theme.display;
                     font-size: Theme.text-xs;
+                    font-weight: 400;
                     letter-spacing: 1.6px;
                 }
             }

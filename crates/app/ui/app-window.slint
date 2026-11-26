@@ -3,8 +3,9 @@
 
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
+import { DisplayLabel, BodyLabel } from "text.slint";
 import { ActionButton, ButtonKind, IconButton, Toggle, Stepper } from "controls.slint";
-import { AccountCard, AccountView, CardState, Gauge } from "account-card.slint";
+import { AccountCard, AccountView, CardMetrics, CardState, Gauge } from "account-card.slint";
 import { Copy, Toast, ToastKind } from "copy.slint";
 import { Sheet, Spinner, TextField, Problem } from "sheets.slint";
 import { DetailsDrawer, Details, DetailGroup, DetailRow, RowKind } from "details-drawer.slint";
@@ -23,33 +24,51 @@ export enum SheetKind { none, add, switch, remove, help, about, settings, update
 export enum UpdateStage { idle, checking, up-to-date, available, downloading, installing, failed }
 export enum AddStep { name, close, sign-in }
 
+// The app's mark: a planet, one orbit and its satellite. The arc and the satellite share the
+// ring's centre line (the arc has `fit: preserve`, see orbit-gauge.slint).
 component LogoMark inherits Rectangle {
     in property <length> size: 30px;
+    property <length> weight: 2px * root.size / 30px;
+    property <float> center: root.size / 1px / 2;
+    property <float> radius: (root.size - self.weight) / 1px / 2;
+    property <angle> end: 18deg;
+    property <float> end-x: self.center + self.radius * Math.cos(self.end);
+    property <float> end-y: self.center + self.radius * Math.sin(self.end);
     width: root.size;
     height: root.size;
+    accessible-role: none;
     Rectangle {
         width: 100%;
         height: 100%;
         border-radius: self.width / 2;
-        border-width: 2px * root.size / 30px;
+        border-width: root.weight;
         border-color: Theme.ion.with-alpha(0.35);
     }
     Path {
         width: 100%;
         height: 100%;
-        viewbox-width: 30;
-        viewbox-height: 30;
-        commands: "M15 1 A14 14 0 0 1 28.3 19.3";
+        fit: preserve;
         stroke: Theme.ion;
-        stroke-width: 2px * root.size / 30px;
+        stroke-width: root.weight;
         stroke-line-cap: round;
         fill: transparent;
+        MoveTo {
+            x: root.center;
+            y: root.center - root.radius;
+        }
+        ArcTo {
+            x: root.end-x;
+            y: root.end-y;
+            radius-x: root.radius;
+            radius-y: root.radius;
+            sweep: true;
+        }
     }
     Rectangle {
-        x: root.size * 25 / 30;
-        y: root.size * 17 / 30;
         width: root.size / 5;
         height: self.width;
+        x: root.end-x * 1px - self.width / 2;
+        y: root.end-y * 1px - self.height / 2;
         border-radius: self.width / 2;
         background: Theme.starlight;
         drop-shadow-blur: 8px;
@@ -66,7 +85,7 @@ component LogoMark inherits Rectangle {
 }
 
 component WindowButton inherits Rectangle {
-    in property <string> icon;
+    in property <image> icon;
     in property <string> label;
     in property <bool> danger;
     callback clicked;
@@ -82,16 +101,15 @@ component WindowButton inherits Rectangle {
 
     touch := TouchArea { clicked => { root.clicked(); } }
     Icon {
-        data: root.icon;
-        size: 16px;
-        weight: 1.5px;
+        source: root.icon;
+        size: 18px;
         tint: touch.has-hover && root.danger ? Theme.space : Theme.dust;
     }
 }
 
 component MenuItem inherits Rectangle {
     in property <string> text;
-    in property <string> icon;
+    in property <image> icon;
     in property <bool> enabled: true;
     callback activated;
 
@@ -114,13 +132,10 @@ component MenuItem inherits Rectangle {
         spacing: 12px;
         VerticalLayout {
             alignment: center;
-            Icon { data: root.icon; size: 16px; tint: Theme.dust; }
+            Icon { source: root.icon; size: 16px; tint: Theme.dust; }
         }
-        Text {
+        BodyLabel {
             text: root.text;
-            color: Theme.starlight;
-            font-size: Theme.text-sm;
-            vertical-alignment: center;
         }
     }
 }
@@ -137,16 +152,18 @@ component HelpStep inherits HorizontalLayout {
         background: Theme.ion.with-alpha(0.12);
         border-width: 1px;
         border-color: Theme.ion.with-alpha(0.4);
-        Text {
+        DisplayLabel {
+            width: 100%;
+            height: 100%;
             text: root.number;
             color: Theme.ion;
-            font-family: Theme.display;
-            font-weight: 600;
+            font-size: Theme.text-sm;
             horizontal-alignment: center;
-            vertical-alignment: center;
         }
     }
     VerticalLayout {
+        // Puts the title's capitals level with the number's circle.
+        padding-top: 3px;
         spacing: 3px;
         Text { text: root.title; color: Theme.starlight; font-size: Theme.text-md; font-weight: 600; }
         Text { text: root.body; color: Theme.dust; font-size: Theme.text-sm; wrap: word-wrap; }
@@ -163,14 +180,14 @@ component EmptyState inherits VerticalLayout {
         Rectangle {
             width: 150px;
             height: 150px;
-            for ring[i] in [0, 1, 2]: Rectangle {
-                x: i * 18px;
-                y: i * 18px;
-                width: 150px - i * 36px;
+            for ring[i] in [0, 1, 2, 3]: Rectangle {
+                x: i * 14px;
+                y: i * 14px;
+                width: 150px - i * 28px;
                 height: self.width;
                 border-radius: self.width / 2;
-                border-width: 5px;
-                border-color: (i == 0 ? Theme.ion : i == 1 ? Theme.solar : Theme.nebula).with-alpha(0.16);
+                border-width: 4px;
+                border-color: (i == 0 ? Theme.ion : i == 1 ? Theme.solar : i == 2 ? Theme.nebula : Theme.pulsar).with-alpha(0.16);
             }
             Rectangle {
                 x: (150px - self.width) / 2;
@@ -181,7 +198,7 @@ component EmptyState inherits VerticalLayout {
                 background: @radial-gradient(circle, #2E3570 0%, #171B3A 100%);
                 border-width: 1px;
                 border-color: Theme.edge-bright;
-                Icon { data: Icons.plus; tint: Theme.ion; size: 20px; weight: 2.2px; }
+                Icon { source: Icons.plus; tint: Theme.ion; size: 20px; }
             }
         }
     }
@@ -231,13 +248,11 @@ component Link inherits Rectangle {
         spacing: 6px;
         VerticalLayout {
             alignment: center;
-            Icon { data: Icons.shortcut; tint: Theme.ion; size: 14px; }
+            Icon { source: Icons.external; tint: Theme.ion; size: 14px; }
         }
-        line := Text {
+        line := BodyLabel {
             text: root.text;
             color: touch.has-hover ? Theme.starlight : Theme.ion;
-            font-size: Theme.text-sm;
-            vertical-alignment: center;
         }
     }
     Rectangle {
@@ -282,8 +297,8 @@ component UpdatePanel inherits Rectangle {
             alignment: center;
             if root.stage == UpdateStage.checking || root.working: Spinner { size: 18px; tint: Theme.ion; }
             if root.stage != UpdateStage.checking && !root.working: Icon {
-                data: root.stage == UpdateStage.failed ? Icons.warning
-                    : root.stage == UpdateStage.available ? Icons.install
+                source: root.stage == UpdateStage.failed ? Icons.warning
+                    : root.stage == UpdateStage.available ? Icons.download
                     : root.stage == UpdateStage.up-to-date ? Icons.check : Icons.refresh;
                 tint: root.tint;
                 size: 18px;
@@ -406,6 +421,10 @@ export component AppWindow inherits Window {
     // Minimizes through the window system: Slint never sets `minimized` back to false when the
     // window is restored from the taskbar, so setting it to true again would do nothing.
     callback minimize-window();
+    // Maximizes or restores through the window system; `zoomed` is what Windows reports, also
+    // after Win+Up, snapping or a double-click changed it.
+    callback toggle-maximize();
+    in property <bool> zoomed;
     callback quit();
 
     // Settings
@@ -445,9 +464,9 @@ export component AppWindow inherits Window {
 
     property <length> gutter: 32px;
     property <length> gap: 20px;
-    property <length> card-height: 262px;
+    property <length> card-height: CardMetrics.height;
     property <length> grid-width: self.width - 2 * self.gutter;
-    property <int> columns: max(1, floor((self.grid-width + self.gap) / (380px + self.gap)));
+    property <int> columns: max(1, floor((self.grid-width + self.gap) / (CardMetrics.min-width + self.gap)));
     property <length> card-width: (self.grid-width - (self.columns - 1) * self.gap) / self.columns;
     property <int> rows: ceil(self.accounts.length / self.columns);
     property <string> status: !root.loaded ? @tr("Reading saved accounts…")
@@ -484,9 +503,9 @@ export component AppWindow inherits Window {
             alignment: end;
             WindowButton { icon: Icons.minimize; label: @tr("Minimize"); clicked => { root.minimize-window(); } }
             WindowButton {
-                icon: root.maximized ? Icons.restore : Icons.maximize;
-                label: root.maximized ? @tr("Restore") : @tr("Maximize");
-                clicked => { root.maximized = !root.maximized; }
+                icon: root.zoomed ? Icons.restore : Icons.maximize;
+                label: root.zoomed ? @tr("Restore") : @tr("Maximize");
+                clicked => { root.toggle-maximize(); }
             }
             WindowButton { icon: Icons.close; label: @tr("Close"); danger: true; clicked => { root.close-window(); } }
         }
@@ -537,7 +556,7 @@ export component AppWindow inherits Window {
                         text: root.update-stage == UpdateStage.downloading || root.update-stage == UpdateStage.installing
                             ? @tr("Updating… {}%", round(root.update-progress * 100))
                             : @tr("Update to {}", root.update-version);
-                        icon: Icons.install;
+                        icon: Icons.download;
                         kind: ButtonKind.accent;
                         clicked => { root.start-update(); }
                     }
@@ -583,7 +602,7 @@ export component AppWindow inherits Window {
         add => { root.open-add(); }
     }
 
-    Flickable {
+    grid := Flickable {
         x: root.gutter - 12px;
         y: header.y + header.height + 20px;
         width: root.grid-width + 24px;
@@ -603,6 +622,54 @@ export component AppWindow inherits Window {
             remove => {
                 root.target-name = account.name;
                 root.sheet = SheetKind.remove;
+            }
+        }
+    }
+
+    // The scroll bar, in the gutter right of the cards: shown only when they do not all fit. Drag
+    // the thumb, or click the track to jump there.
+    rail := Rectangle {
+        property <length> range: grid.content-height - grid.height;
+        property <length> thumb-height: max(40px, self.height * grid.height / max(1px, grid.content-height));
+        property <length> travel: self.height - self.thumb-height;
+        property <length> thumb-y: self.range > 0 ? clamp(-grid.content-y / self.range, 0, 1) * self.travel : 0;
+        property <length> grab;
+
+        function scroll-to(top: length) {
+            grid.content-y = -clamp(top, 0, self.travel) / max(1px, self.travel) * self.range;
+        }
+        // A taller window, or fewer cards, never leaves the list scrolled past its end.
+        changed range => {
+            grid.content-y = max(grid.content-y, -max(0px, self.range));
+        }
+
+        x: root.width - 18px;
+        y: grid.y + 4px;
+        width: 12px;
+        height: grid.height - 12px;
+        visible: self.range > 1px;
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: rail.thumb-y;
+            width: drag.has-hover || drag.pressed ? 6px : 4px;
+            height: rail.thumb-height;
+            border-radius: self.width / 2;
+            background: drag.pressed ? Theme.dust : drag.has-hover ? Theme.dust.with-alpha(0.7) : Theme.edge-bright;
+            animate width, background { duration: Theme.quick; }
+        }
+        drag := TouchArea {
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    rail.grab = self.mouse-y >= rail.thumb-y && self.mouse-y <= rail.thumb-y + rail.thumb-height
+                        ? self.mouse-y - rail.thumb-y : rail.thumb-height / 2;
+                    rail.scroll-to(self.mouse-y - rail.grab);
+                }
+            }
+            moved => {
+                if self.pressed {
+                    rail.scroll-to(self.mouse-y - rail.grab);
+                }
             }
         }
     }
@@ -628,7 +695,7 @@ export component AppWindow inherits Window {
                     text: root.running-installed ? @tr("Running the installed copy")
                         : root.installed ? @tr("Update the installed copy")
                         : @tr("Install on this PC");
-                    icon: Icons.install;
+                    icon: Icons.download;
                     enabled: !root.running-installed;
                     activated => { root.install(); }
                 }
@@ -639,7 +706,7 @@ export component AppWindow inherits Window {
                 }
                 MenuItem {
                     text: @tr("Settings");
-                    icon: Icons.details;
+                    icon: Icons.sliders;
                     activated => { root.sheet = SheetKind.settings; }
                 }
                 MenuItem {
@@ -650,7 +717,7 @@ export component AppWindow inherits Window {
                 Rectangle { height: 1px; background: Theme.edge; }
                 MenuItem {
                     text: @tr("Quit");
-                    icon: Icons.close;
+                    icon: Icons.power;
                     activated => { root.quit(); }
                 }
             }
@@ -704,7 +771,7 @@ export component AppWindow inherits Window {
                 width: 54px;
                 border-radius: 14px;
                 background: root.add-detected ? Theme.aurora.with-alpha(0.12) : Theme.ion.with-alpha(0.08);
-                if root.add-detected: Icon { data: Icons.check; tint: Theme.aurora; size: 24px; weight: 2.4px; }
+                if root.add-detected: Icon { source: Icons.check; tint: Theme.aurora; size: 24px; }
                 if !root.add-detected: Spinner { size: 24px; }
             }
             VerticalLayout {
@@ -732,12 +799,13 @@ export component AppWindow inherits Window {
             alignment: end;
             if root.busy: HorizontalLayout {
                 spacing: 10px;
-                Spinner { size: 18px; y: 10px; }
-                Text {
+                VerticalLayout {
+                    alignment: center;
+                    Spinner { size: 18px; }
+                }
+                BodyLabel {
                     text: root.add-step == AddStep.close ? @tr("Closing Antigravity…") : @tr("Working…");
                     color: Theme.dust;
-                    font-size: Theme.text-sm;
-                    vertical-alignment: center;
                 }
             }
             Rectangle { horizontal-stretch: 1; }
@@ -783,8 +851,11 @@ export component AppWindow inherits Window {
             alignment: end;
             if root.busy: HorizontalLayout {
                 spacing: 10px;
-                Spinner { size: 18px; y: 10px; }
-                Text { text: @tr("Closing Antigravity…"); color: Theme.dust; font-size: Theme.text-sm; vertical-alignment: center; }
+                VerticalLayout {
+                    alignment: center;
+                    Spinner { size: 18px; }
+                }
+                BodyLabel { text: @tr("Closing Antigravity…"); color: Theme.dust; }
             }
             Rectangle { horizontal-stretch: 1; }
             ActionButton { text: @tr("Not now"); enabled: !root.busy; clicked => { root.close-sheet(); } }
@@ -843,7 +914,7 @@ export component AppWindow inherits Window {
             HelpStep {
                 number: "3";
                 title: @tr("Watch the fuel");
-                body: @tr("Each orbit is a limit: outer the Claude and GPT weekly limit, middle their 5-hour limit, inner Gemini's 5-hour or weekly limit, whichever has less left. Quota refreshes every minute; open a card's details for both groups and every model.");
+                body: @tr("Google gives each account two groups of limits, Claude and GPT, and Gemini, each with a 5-hour and a weekly limit. The orbits show them from the outside in: Claude and GPT weekly, their 5-hour, Gemini weekly, Gemini 5-hour; beside them each one's percent and the time until it refills. Quota refreshes every minute; a card's details list every model too.");
             }
             HelpStep {
                 number: "4";
@@ -1016,14 +1087,24 @@ export component AppWindow inherits Window {
             font-size: Theme.text-xs;
             wrap: word-wrap;
         }
+        // The Slint badge, Close level with its bottom. The badge has 12 px of padding of its own;
+        // it is pulled out by that much so its logo lines up with the text above.
         HorizontalLayout {
-            alignment: start;
-            height: 70px;
-            AboutSlint { }
-        }
-        HorizontalLayout {
-            alignment: end;
-            ActionButton { text: @tr("Close"); clicked => { root.close-sheet(); } }
+            Rectangle {
+                width: 104px;
+                height: 82px;
+                AboutSlint {
+                    x: -12px;
+                    y: -12px;
+                    width: parent.width + 24px;
+                    height: parent.height + 24px;
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: end;
+                ActionButton { text: @tr("Close"); clicked => { root.close-sheet(); } }
+            }
         }
     }
 
@@ -1097,13 +1178,17 @@ export component AppWindow inherits Window {
 
     toast-card := Rectangle {
         property <bool> shown;
+        // 0 hidden below the window, 1 in place. Only this animates: the toast's place follows the
+        // window's height at once, so resizing the window never brings a hidden toast into view.
+        property <float> progress: self.shown ? 1 : 0;
+        animate progress { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
         property <color> tint: root.toast.kind == ToastKind.problem ? Theme.flare
             : root.toast.kind == ToastKind.success ? Theme.aurora : Theme.ion;
         width: min(560px, root.width - 80px);
         height: note.preferred-height + 28px;
         x: (root.width - self.width) / 2;
-        y: self.shown ? root.height - self.height - 28px : root.height + 20px;
-        animate y { duration: Theme.calm; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        y: root.height + 20px - (self.height + 48px) * self.progress;
+        visible: self.progress > 0;
         border-radius: 14px;
         background: Theme.hull-raised;
         border-width: 1px;
@@ -1128,17 +1213,15 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 alignment: center;
                 Icon {
-                    data: root.toast.kind == ToastKind.problem ? Icons.warning : Icons.check;
+                    source: root.toast.kind == ToastKind.problem ? Icons.warning : Icons.check;
                     tint: toast-card.tint;
                     size: 18px;
                 }
             }
-            note := Text {
+            note := BodyLabel {
                 text: Copy.toast(root.toast);
-                color: Theme.starlight;
-                font-size: Theme.text-sm;
                 wrap: word-wrap;
-                vertical-alignment: center;
+                horizontal-stretch: 1;
             }
         }
     }

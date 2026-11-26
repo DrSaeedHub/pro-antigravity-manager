@@ -2,6 +2,7 @@
 
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
+import { DisplayLabel, BodyLabel } from "text.slint";
 
 // primary: filled Ion. accent: a quiet Ion outline that fills when `lit` (its card is hovered)
 // or when hovered itself. quiet: neutral. danger: filled Flare.
@@ -11,7 +12,7 @@ export component ActionButton inherits Rectangle {
     in property <string> text;
     // What screen readers and UI Automation say, when it differs from a shortened `text`.
     in property <string> label;
-    in property <string> icon;
+    in property <image> icon;
     in property <ButtonKind> kind: ButtonKind.quiet;
     in property <bool> enabled: true;
     in property <bool> lit;
@@ -57,28 +58,25 @@ export component ActionButton inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: root.icon == "" ? 18px : 14px;
+        padding-left: root.icon.width == 0 ? 18px : 14px;
         padding-right: 18px;
         spacing: 8px;
         alignment: center;
 
-        if root.icon != "": VerticalLayout {
+        if root.icon.width > 0: VerticalLayout {
             alignment: center;
-            Icon { data: root.icon; tint: root.ink; size: 16px; weight: 2px; }
+            Icon { source: root.icon; tint: root.ink; size: 16px; }
         }
-        Text {
+        DisplayLabel {
             text: root.text;
             color: root.ink;
-            font-family: Theme.display;
             font-size: 14px;
-            font-weight: 600;
-            vertical-alignment: center;
         }
     }
 }
 
 export component IconButton inherits Rectangle {
-    in property <string> icon;
+    in property <image> icon;
     in property <string> label;          // spoken by screen readers
     in property <color> tint: Theme.dust;
     in property <color> hot-tint: Theme.starlight;
@@ -101,7 +99,7 @@ export component IconButton inherits Rectangle {
     }
 
     Icon {
-        data: root.icon;
+        source: root.icon;
         tint: touch.has-hover ? root.hot-tint : root.tint;
         size: 18px;
         animate tint { duration: Theme.quick; }
@@ -142,14 +140,11 @@ export component Tag inherits Rectangle {
                 animate opacity { duration: 1400ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
             }
         }
-        Text {
+        DisplayLabel {
             text: root.text;
             color: root.tint;
-            font-family: Theme.display;
             font-size: Theme.text-xs;
-            font-weight: 600;
             letter-spacing: 1.2px;
-            vertical-alignment: center;
             overflow: elide;
         }
     }
@@ -208,7 +203,7 @@ export component Stepper inherits HorizontalLayout {
     VerticalLayout {
         alignment: center;
         IconButton {
-            icon: Icons.minimize;
+            icon: Icons.minus;
             label: @tr("Less {}", root.label);
             clicked => {
                 root.value = max(root.minimum, root.value - root.step);
@@ -216,14 +211,9 @@ export component Stepper inherits HorizontalLayout {
             }
         }
     }
-    Text {
+    DisplayLabel {
         text: root.shown;
-        color: Theme.starlight;
-        font-family: Theme.display;
-        font-size: Theme.text-md;
-        font-weight: 600;
         horizontal-alignment: center;
-        vertical-alignment: center;
         min-width: 78px;
     }
     VerticalLayout {

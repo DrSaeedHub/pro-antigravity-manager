@@ -97,12 +97,12 @@ Settings, Quit, and delete the folder and the shortcuts.
 ## Every account's fuel, at a glance
 
 Google gives every account two groups of limits, the same ones Antigravity shows in its settings:
-**Gemini** models, and **Claude and GPT** models, each with a 5-hour and a weekly limit. Each saved
-account is a card with an **orbit gauge**: the outer orbit is the Claude and GPT weekly limit, the
-middle one their 5-hour limit, the inner one Gemini's 5-hour or weekly limit, whichever has less
-left. Beside it are the same three as percentages, each with the time left until it resets; the
-details drawer has all four limits and every model. A limit under 20%
-turns red; a full one drops its countdown. The green ACTIVE tag goes to the account Antigravity is
+**Claude and GPT** models, and **Gemini** models, each with a 5-hour and a weekly limit. Each saved
+account is a card with an **orbit gauge**, one orbit per limit, from the outside in: Claude and GPT
+weekly, Claude and GPT 5-hour, Gemini weekly, Gemini 5-hour. Beside it a small table gives the same
+four as percentages, each with the time left until it refills; a coloured dot ties each number to
+its orbit (5-hour limits warm, weekly ones cool). The details drawer lists both groups and every
+model. A limit under 20% turns red; a full one drops its countdown. The green ACTIVE tag goes to the account Antigravity is
 signed in with right now, matched by the email in Antigravity's own credential rather than by
 whatever the switcher did last. Every account's quota and plan are read once a minute, with the
 window open or closed to the tray.
@@ -187,7 +187,7 @@ ending and takes over instead of starting beside it.
 
 | The tray menu | The first close |
 |---|---|
-| <img src="docs/screenshots/14-tray-menu.png" alt="The tray menu with every account's quota, Update to 1.3.0 and the GitHub page" width="309"> | <img src="docs/screenshots/15-tray-notice.png" alt="Still running in the tray" width="430"> |
+| <img src="docs/screenshots/14-tray-menu.png" alt="The tray menu with every account's quota, Update to 1.4.0 and the GitHub page" width="309"> | <img src="docs/screenshots/15-tray-notice.png" alt="Still running in the tray" width="430"> |
 
 ## It switches for you, but never from 2% to 1%
 
@@ -229,7 +229,7 @@ by GitHub's download network rather than its rate-limited API. A newer version a
 it is announced once, in the corner. Nothing is installed until you choose it.
 
 <div align="center">
-<img src="docs/screenshots/26-update-button.png" alt="Update to 1.3.0, beside Refresh and Add account" width="560">
+<img src="docs/screenshots/26-update-button.png" alt="Update to 1.4.0, beside Refresh and Add account" width="560">
 </div>
 
 One click downloads the portable package next to the running executable, with progress and
@@ -244,10 +244,10 @@ and its entry in Installed apps always match the app. Prereleases are never offe
 
 | About, with the new version | Updating |
 |---|---|
-| <img src="docs/screenshots/25-about.png" alt="About: version 1.3.0 is ready, with Release notes, Update and the GitHub page" width="410"> | <img src="docs/screenshots/27-update-progress.png" alt="Updating to 1.3.0: downloading with a progress bar and Cancel" width="410"> |
+| <img src="docs/screenshots/25-about.png" alt="About: version 1.4.0 is ready, with Release notes, Update and the GitHub page" width="410"> | <img src="docs/screenshots/27-update-progress.png" alt="Updating to 1.4.0: downloading with a progress bar and Cancel" width="410"> |
 
 <div align="center">
-<img src="docs/screenshots/28-update-notice.png" alt="Version 1.3.0 is ready, with Later and Update" width="430">
+<img src="docs/screenshots/28-update-notice.png" alt="Version 1.4.0 is ready, with Later and Update" width="430">
 </div>
 
 ## Problems are named, with what to do about them
@@ -281,7 +281,7 @@ The first start has nothing to show, and says what to do next:
 
 | | |
 |---|---|
-| **Accounts** | A card per account with an orbit gauge (Claude and GPT weekly · Claude and GPT 5-hour · Gemini's tighter limit) · percent and reset countdown per limit · red under 20% · ACTIVE by the email Antigravity is signed in with · plan from Google · problems in words on the card · a grid that reflows with the window, narrow cards shortening their button and plan tag · double-click a card to switch |
+| **Accounts** | A card per account with an orbit gauge and a table of its four limits (Claude and GPT, Gemini · 5-hour, weekly) · percent and refill countdown per limit · red under 20% · ACTIVE by the email Antigravity is signed in with · plan from Google · problems in words on the card · a grid that reflows with the window and never squeezes a card below the width its content needs · a scroll bar when the cards do not all fit · double-click a card to switch |
 | **Quota** | Every account once a minute, window open or in the tray · Refresh on demand · every limit group and every model in a details drawer, in Antigravity's order · countdowns and local reset times · access tokens kept in memory and renewed 2 minutes early · Antigravity's own sign-in client found in its install, cached encrypted, looked for again while missing · the Windows proxy settings, including PAC scripts and automatic detection |
 | **Switching** | One click, or a double-click on the card · asks before closing an open Antigravity · close request, then ending its processes, 8 s each · the credential copied whole, never edited · the active account just starts Antigravity · nothing blocks the window |
 | **Adding** | Guided: name → close Antigravity → sign in → save · the new sign-in noticed every 2 s, with its email · the saved copy read back · desktop shortcut created · Cancel, a failure or Quit restores the previous sign-in |
